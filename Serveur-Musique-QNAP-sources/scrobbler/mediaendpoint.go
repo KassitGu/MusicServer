@@ -1,24 +1,43 @@
 package main
 
-// Interface « Media Endpoint » (0.0.4).
+// "Media Endpoint" interface.
 //
-// Pourquoi : l'application de contrôle n'affiche l'accueil en rangées (avec le cœur
-// « Ajouter aux favoris ») et sa recherche qu'avec les serveurs qui parlent ce
-// protocole JSON d'OpenHome, comme Kazoo Server. Avec un simple serveur UPnP
-// (notre 0.0.3), elle montre une grille de dossiers et pas de recherche. Le
+// Why: the control app shows its home screen in rows (with the "Add to
+// favourites" heart) and its search only for servers that speak this
+// OpenHome JSON protocol, such as Kazoo Server. With a plain UPnP server it
+// shows a grid of folders and no search. The protocol is not publicly
+// documented: it was observed, for interoperability, in the client published
+// by OpenHome, in the Kazoo Server package and in the control app.
+//
+// Discovery: the UPnP description carries <openhome:X_PATH>/ps</...> and an
+// absolute presentationURL; the app reads /ps/es (address of the event
+// server, eventserver.go), subscribes there to "ps.me", reads /ps/me, then
+// everything goes through GET requests on /me/<id>/<verb>: sessions, lists
+// (one per row), browsing, search, reading items page by page.
+//
+// The UPnP ContentDirectory service stays in place for players and other
+// apps; the "classic mode" setting of the web page (port 8790) removes
+// X_PATH should the app misbehave.
+//
+// Interface « Media Endpoint ».
+//
+// Pourquoi : l'application de contrôle n'affiche l'accueil en rangées (avec
+// le cœur « Ajouter aux favoris ») et sa recherche qu'avec les serveurs qui
+// parlent ce protocole JSON d'OpenHome, comme Kazoo Server. Avec un simple
+// serveur UPnP, elle montre une grille de dossiers et pas de recherche. Le
 // protocole n'est pas documenté publiquement : il a été relevé, pour
 // l'interopérabilité, dans le client publié par OpenHome, dans le paquet
-// Kazoo Server et dans l'application de contrôle (notes : serveur-musique/notes/).
+// Kazoo Server et dans l'application de contrôle.
 //
-// Découverte : la description UPnP porte <openhome:X_PATH>/ps</…> et une
-// presentationURL absolue ; l'appli lit /ps/es (adresse du serveur
+// Découverte : la description UPnP porte <openhome:X_PATH>/ps</...> et une
+// presentationURL absolue ; l'application lit /ps/es (adresse du serveur
 // d'événements, eventserver.go), s'y abonne à « ps.me », lit /ps/me, puis
 // tout passe par des GET sur /me/<id>/<verbe> : sessions, listes (une par
 // rangée), navigation, recherche, lecture des éléments par pages.
 //
 // Le service UPnP ContentDirectory reste en place pour les lecteurs et les
-// autres applications ; le réglage « mode classique » de la page :8790
-// retire X_PATH si l'appli devait mal se comporter.
+// autres applications ; le réglage « mode classique » de la page web
+// (port 8790) retire X_PATH si l'application devait mal se comporter.
 
 import (
 	"crypto/md5"
@@ -39,49 +58,55 @@ import (
 )
 
 const (
-	meSessionTTL   = 120 * time.Second // comme Kazoo : session sans abonné détruite après 120 s
-	meMaxSessions  = 1000              // garde-fou (Kazoo n'en a pas)
-	meMaxRead      = 500
-	meMatchLimit   = 500
-	meTopCount     = 10 // 0.0.6 : 10 morceaux (Bertrand, 2026-10-07 ; 9 en 0.0.4)
-	meNotifyPeriod = 15 * time.Second
+	meSessionTTL   = 120 * time.Second // as Kazoo Server: a session without subscribers is destroyed after 120 s / comme Kazoo Server : session sans abonné détruite après 120 s
+	meMaxSessions  = 1000              // safety limit (Kazoo Server has none) / garde-fou (Kazoo Server n'en a pas)
+	meMaxRead      = 500               // items per read call / éléments par appel read
+	meMatchLimit   = 500               // search results kept / résultats de recherche gardés
+	meTopCount     = 10                // tracks in the "Most played" and "Recently played" rows / morceaux des rangées « Les plus écoutés » et « Écoutés récemment »
+	meNotifyPeriod = 15 * time.Second  // grouped change notifications / notifications de changement groupées
 )
 
-// MediaEndpoint : la bibliothèque « Musique NAS » vue par l'application de contrôle.
+// MediaEndpoint is the "Musique NAS" library as seen by the control app.
+// MediaEndpoint est la bibliothèque « Musique NAS » vue par l'application de contrôle.
 type MediaEndpoint struct {
 	ms      *MediaServer
 	lib     *LibraryService
-	ID      string // identifiant stable (dérivé de l'UDN du serveur)
+	ID      string // stable identifier (derived from the server UDN) / identifiant stable (dérivé de l'UDN du serveur)
 	started time.Time
 	events  *EventServer
 
 	mu       sync.Mutex
 	sessions map[string]*meSession
-	pending  atomic.Bool // bibliothèque changée, sessions à prévenir
+	pending  atomic.Bool // library changed, sessions to notify / bibliothèque changée, sessions à prévenir
 
 	view atomic.Pointer[meView]
 }
 
+// meSession holds the last snapshot of items computed for one app session.
+// meSession garde le dernier instantané d'éléments calculé pour une session de l'application.
 type meSession struct {
 	items   []meItem
 	subs    int
-	expires time.Time // sans abonné : destruction à cette heure
-	used    time.Time
+	expires time.Time // without subscribers: destroyed at this time / sans abonné : destruction à cette heure
+	used    time.Time // last use, for eviction / dernière utilisation, pour l'éviction
 }
 
-// meItem : un élément d'un instantané, converti en JSON à la lecture.
+// meItem is one item of a snapshot, converted to JSON when read.
+// meItem est un élément d'un instantané, converti en JSON à la lecture.
 type meItem struct {
-	kind   byte // 'a' album, 'r' artiste, 'c' compositeur, 'g' genre, 't' piste, 'p' playlist, 'v' vue
+	kind   byte // 'a' album, 'r' artist, 'c' composer, 'g' genre, 't' track, 'p' playlist, 'v' view / 'a' album, 'r' artiste, 'c' compositeur, 'g' genre, 't' piste, 'p' playlist, 'v' vue
 	album  *Album
 	artist *Artist
 	comp   *meComposer
 	genre  *Genre
 	track  *Track
 	pl     *Playlist
-	id     string // vue
-	title  string // vue
+	id     string // view / vue
+	title  string // view / vue
 }
 
+// NewMediaEndpoint creates the endpoint and hooks it to the event server.
+// NewMediaEndpoint crée l'endpoint et le relie au serveur d'événements.
 func NewMediaEndpoint(ms *MediaServer, lib *LibraryService, events *EventServer) *MediaEndpoint {
 	me := &MediaEndpoint{ms: ms, lib: lib, ID: endpointID(ms.UDN), started: time.Now().UTC(),
 		events: events, sessions: map[string]*meSession{}}
@@ -91,10 +116,14 @@ func NewMediaEndpoint(ms *MediaServer, lib *LibraryService, events *EventServer)
 	return me
 }
 
-// endpointID : identifiant au format uuid, stable pour un même serveur
-// (l'appli range ses sources et ses épingles de favoris par cet id).
+// endpointID returns a uuid-format identifier, stable for a given server
+// (the app files its sources and favourite pins under this id).
+// endpointID renvoie un identifiant au format uuid, stable pour un même
+// serveur (l'application range ses sources et ses épingles de favoris par cet id).
 func endpointID(udn string) string {
 	h := md5.Sum([]byte("media-endpoint|" + udn))
+	// Version 3 (name-based, MD5) and RFC 4122 variant bits.
+	// Bits de version 3 (par nom, MD5) et de variante RFC 4122.
 	h[6] = h[6]&0x0f | 0x30
 	h[8] = h[8]&0x3f | 0x80
 	return uuidString(h[:])
@@ -105,6 +134,8 @@ func uuidString(b []byte) string {
 	return s[0:8] + "-" + s[8:12] + "-" + s[12:16] + "-" + s[16:20] + "-" + s[20:32]
 }
 
+// Routes registers the /ps and /me handlers.
+// Routes enregistre les gestionnaires /ps et /me.
 func (me *MediaEndpoint) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ps", me.handlePS)
 	mux.HandleFunc("GET /ps/{key}", me.handlePS)
@@ -112,7 +143,8 @@ func (me *MediaEndpoint) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /me/{id}/{call}", me.handleCall)
 }
 
-// Run : durée de vie des sessions et notifications groupées.
+// Run handles session lifetime and grouped notifications.
+// Run gère la durée de vie des sessions et les notifications groupées.
 func (me *MediaEndpoint) Run(stop <-chan struct{}) {
 	t := time.NewTicker(meNotifyPeriod)
 	defer t.Stop()
@@ -130,12 +162,14 @@ func (me *MediaEndpoint) Run(stop <-chan struct{}) {
 }
 
 // ---------------------------------------------------------------------------
-// Réponses HTTP
+// HTTP responses / Réponses HTTP
 
+// writeJSONValue sends v as an uncached JSON response.
+// writeJSONValue envoie v en réponse JSON non mise en cache.
 func writeJSONValue(w http.ResponseWriter, v any) {
 	b, err := json.Marshal(v)
 	if err != nil {
-		meError(w, http.StatusInternalServerError, "erreur interne")
+		meError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
@@ -144,8 +178,11 @@ func writeJSONValue(w http.ResponseWriter, v any) {
 	w.Write(b)
 }
 
-// meError : l'appli traite tout statut hors 2xx comme une erreur ; le
-// corps (HTML, comme Kazoo) ne sert qu'au diagnostic.
+// meError sends an error status. The app treats any non-2xx status as an
+// error; the body (HTML, as Kazoo Server does) is only for diagnostics.
+// meError envoie un statut d'erreur. L'application traite tout statut hors
+// 2xx comme une erreur ; le corps (HTML, comme Kazoo Server) ne sert qu'au
+// diagnostic.
 func meError(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "text/html; charset=UTF-8")
 	w.WriteHeader(code)
@@ -154,18 +191,20 @@ func meError(w http.ResponseWriter, code int, msg string) {
 }
 
 // ---------------------------------------------------------------------------
-// Arbre /ps (description de l'endpoint)
+// /ps tree (endpoint description) / Arbre /ps (description de l'endpoint)
 
+// entry describes the endpoint as listed under /ps/me.
+// entry décrit l'endpoint tel que listé sous /ps/me.
 func (me *MediaEndpoint) entry(host string) map[string]any {
 	icon := "http://" + host + "/icons/icon-120.png"
 	return map[string]any{
 		"Version":             1,
-		"Type":                "Music", // casse exacte exigée par l'appli
+		"Type":                "Music", // exact case required by the app / casse exacte exigée par l'application
 		"Name":                me.ms.Name,
-		"Info":                "Bibliothèque musicale du NAS",
+		"Info":                tr(me.lib.lang(), "Music library of the NAS"),
 		"Url":                 "",
 		"Artwork":             icon,
-		"ManufacturerName":    "Serveur Musique",
+		"ManufacturerName":    "Musique NAS",
 		"ManufacturerInfo":    "",
 		"ManufacturerUrl":     "",
 		"ManufacturerArtwork": icon,
@@ -173,17 +212,20 @@ func (me *MediaEndpoint) entry(host string) map[string]any {
 		"ModelInfo":           me.ms.Version,
 		"ModelUrl":            "",
 		"ModelArtwork":        icon,
-		"Started":             me.started.Format(http.TimeFormat), // RFC 1123, comme Kazoo ; jamais null
-		"Path":                "/me/" + me.ID,                     // sans « / » final
+		"Started":             me.started.Format(http.TimeFormat), // RFC 1123, as Kazoo Server; never null / RFC 1123, comme Kazoo Server ; jamais null
+		"Path":                "/me/" + me.ID,                     // no trailing "/" / sans « / » final
 		"Attributes":          []string{"Browse", "List", "Link", "Search", "Tabs"},
 	}
 }
 
+// esValue returns the event server address published in /ps/es.
+// esValue renvoie l'adresse du serveur d'événements publiée dans /ps/es.
 func (me *MediaEndpoint) esValue() string {
 	if me.events == nil {
 		return ""
 	}
-	// 0.0.0.0 : l'appli le remplace par l'adresse de la presentationURL.
+	// 0.0.0.0: the app replaces it with the presentationURL address.
+	// 0.0.0.0 : l'application le remplace par l'adresse de la presentationURL.
 	return "0.0.0.0:" + strconv.Itoa(me.events.Port())
 }
 
@@ -195,20 +237,22 @@ func (me *MediaEndpoint) handlePS(w http.ResponseWriter, r *http.Request) {
 	case "es", "me":
 		writeJSONValue(w, all[k])
 	default:
-		meError(w, http.StatusNotFound, "inconnu")
+		meError(w, http.StatusNotFound, "unknown")
 	}
 }
 
 func (me *MediaEndpoint) handlePSEntry(w http.ResponseWriter, r *http.Request) {
 	if r.PathValue("id") != me.ID {
-		meError(w, http.StatusNotFound, "endpoint inconnu")
+		meError(w, http.StatusNotFound, "unknown endpoint")
 		return
 	}
 	writeJSONValue(w, me.entry(r.Host))
 }
 
-// presentationHost : adresse IPv4 par laquelle le client nous joint
-// (l'appli exige une IPv4 littérale dans la presentationURL).
+// presentationHost returns the IPv4 address through which the client
+// reaches us (the app requires a literal IPv4 in the presentationURL).
+// presentationHost renvoie l'adresse IPv4 par laquelle le client nous joint
+// (l'application exige une IPv4 littérale dans la presentationURL).
 func presentationHost(r *http.Request) string {
 	if a, ok := r.Context().Value(http.LocalAddrContextKey).(net.Addr); ok {
 		if ta, ok := a.(*net.TCPAddr); ok {
@@ -226,11 +270,15 @@ func presentationHost(r *http.Request) string {
 func newSessionID() string {
 	b := make([]byte, 16)
 	rand.Read(b)
+	// Version 4 (random) and RFC 4122 variant bits.
+	// Bits de version 4 (aléatoire) et de variante RFC 4122.
 	b[6] = b[6]&0x0f | 0x40
 	b[8] = b[8]&0x3f | 0x80
 	return uuidString(b)
 }
 
+// eventID is the event id the app subscribes to for a session.
+// eventID est l'id d'événement auquel l'application s'abonne pour une session.
 func (me *MediaEndpoint) eventID(sid string) string { return "me." + me.ID + "." + sid }
 
 func (me *MediaEndpoint) createSession() string {
@@ -238,6 +286,7 @@ func (me *MediaEndpoint) createSession() string {
 	defer me.mu.Unlock()
 	now := time.Now()
 	if len(me.sessions) >= meMaxSessions {
+		// Safety limit: the least recently used session is dropped.
 		// Garde-fou : la session la moins récemment utilisée est oubliée.
 		var oldest string
 		var t time.Time
@@ -273,8 +322,10 @@ func (me *MediaEndpoint) session(id string) *meSession {
 	return s
 }
 
-// subscribers : appelé par le serveur d'événements. Une session suivie par
-// l'appli ne meurt pas ; 120 s après le départ du dernier abonné, si.
+// subscribers is called by the event server. A session followed by the
+// app does not expire; it does 120 s after its last subscriber leaves.
+// subscribers est appelé par le serveur d'événements. Une session suivie par
+// l'application ne meurt pas ; 120 s après le départ du dernier abonné, si.
 func (me *MediaEndpoint) subscribers(id string, delta int) {
 	prefix := "me." + me.ID + "."
 	if !strings.HasPrefix(id, prefix) {
@@ -292,6 +343,8 @@ func (me *MediaEndpoint) subscribers(id string, delta int) {
 	}
 }
 
+// expire destroys the unsubscribed sessions whose delay has passed.
+// expire détruit les sessions sans abonné dont le délai est passé.
 func (me *MediaEndpoint) expire(now time.Time) {
 	me.mu.Lock()
 	defer me.mu.Unlock()
@@ -308,12 +361,17 @@ func (me *MediaEndpoint) sessionCount() int {
 	return len(me.sessions)
 }
 
-// Changed : la bibliothèque, les favoris ou les écoutes ont changé. Les
-// sessions ouvertes sont prévenues au prochain tour (15 s au plus) : les
+// Changed reports that the library, favourites or plays have changed. Open
+// sessions are notified on the next round (15 s at most): artist photos
+// arrive in bursts, and one notification per photo would make the app flicker.
+// Changed signale que la bibliothèque, les favoris ou les écoutes ont changé.
+// Les sessions ouvertes sont prévenues au prochain tour (15 s au plus) : les
 // photos d'artistes arrivent par rafales, une notification par photo ferait
-// clignoter l'appli.
+// clignoter l'application.
 func (me *MediaEndpoint) Changed() { me.pending.Store(true) }
 
+// notifyAll sends a change event to every subscribed session.
+// notifyAll envoie un événement de changement à chaque session suivie.
 func (me *MediaEndpoint) notifyAll() {
 	if me.events == nil {
 		return
@@ -332,12 +390,16 @@ func (me *MediaEndpoint) notifyAll() {
 }
 
 // ---------------------------------------------------------------------------
-// Paramètres
+// Parameters / Paramètres
 
-// meQuery : comme l'application de contrôle et Kazoo Server, la requête entière est décodée
-// (pourcent), puis découpée sur « & » et sur le premier « = ». Surtout pas
-// r.URL.Query() : « + » y devient une espace et casserait le base64 de
-// « val », que l'appli n'encode pas.
+// meQuery parses the query string as the control app and Kazoo Server do:
+// the whole query is percent-decoded, then split on "&" and on the first
+// "=". r.URL.Query() must not be used: it turns "+" into a space, which
+// would break the base64 of "val", which the app does not encode.
+// meQuery analyse la requête comme l'application de contrôle et Kazoo
+// Server : la requête entière est décodée (pourcent), puis découpée sur
+// « & » et sur le premier « = ». Surtout pas r.URL.Query() : « + » y devient
+// une espace et casserait le base64 de « val », que l'application n'encode pas.
 func meQuery(raw string) map[string]string {
 	if u, err := url.PathUnescape(raw); err == nil {
 		raw = u
@@ -353,10 +415,11 @@ func meQuery(raw string) map[string]string {
 	return out
 }
 
-// decodeVal : base64 standard de l'UTF-8 ; variantes tolérées.
+// decodeVal decodes standard base64 of UTF-8 text; variants are tolerated.
+// decodeVal décode le base64 standard de l'UTF-8 ; variantes tolérées.
 func decodeVal(v string) (string, bool) {
 	v = strings.TrimSpace(v)
-	v = strings.ReplaceAll(v, " ", "+") // client qui aurait encodé « + » en espace
+	v = strings.ReplaceAll(v, " ", "+") // a client that encoded "+" as a space / client qui aurait encodé « + » en espace
 	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
 		if b, err := enc.DecodeString(v); err == nil {
 			return string(b), true
@@ -365,15 +428,20 @@ func decodeVal(v string) (string, bool) {
 	return "", false
 }
 
-// snapshotReply : réponse de browse, list, link, match et search.
+// snapshotReply is the reply to browse, list, link, match and search.
+// snapshotReply est la réponse de browse, list, link, match et search.
 type snapshotReply struct {
 	Total int   `json:"Total"`
 	Alpha []int `json:"Alpha"`
 }
 
+// handleCall serves /me/<id>/<verb>. Snapshot verbs store their items in
+// the session; "read" then returns them page by page.
+// handleCall sert /me/<id>/<verbe>. Les verbes d'instantané rangent leurs
+// éléments dans la session ; « read » les renvoie ensuite par pages.
 func (me *MediaEndpoint) handleCall(w http.ResponseWriter, r *http.Request) {
 	if r.PathValue("id") != me.ID {
-		meError(w, http.StatusNotFound, "endpoint inconnu")
+		meError(w, http.StatusNotFound, "unknown endpoint")
 		return
 	}
 	q := meQuery(r.URL.RawQuery)
@@ -388,30 +456,30 @@ func (me *MediaEndpoint) handleCall(w http.ResponseWriter, r *http.Request) {
 	case "destroy":
 		sid, ok := q["session"]
 		if !ok {
-			meError(w, http.StatusBadRequest, "session absente")
+			meError(w, http.StatusBadRequest, "missing session")
 			return
 		}
 		me.mu.Lock()
 		me.destroyLocked(sid)
 		me.mu.Unlock()
-		writeJSONValue(w, nil) // « null », même pour une session inconnue (Kazoo)
+		writeJSONValue(w, nil) // "null", even for an unknown session (as Kazoo Server) / « null », même pour une session inconnue (comme Kazoo Server)
 		return
 	case "favourite":
 		writeJSONValue(w, nil)
 		return
 	case "browse", "list", "link", "match", "search", "read":
 	default:
-		meError(w, http.StatusNotFound, "verbe inconnu")
+		meError(w, http.StatusNotFound, "unknown verb")
 		return
 	}
 	sid, ok := q["session"]
 	if !ok {
-		meError(w, http.StatusBadRequest, "session absente")
+		meError(w, http.StatusBadRequest, "missing session")
 		return
 	}
 	s := me.session(sid)
 	if s == nil {
-		meError(w, http.StatusNotFound, "session inconnue")
+		meError(w, http.StatusNotFound, "unknown session")
 		return
 	}
 	base := "http://" + r.Host
@@ -419,7 +487,7 @@ func (me *MediaEndpoint) handleCall(w http.ResponseWriter, r *http.Request) {
 		index, err1 := strconv.ParseUint(q["index"], 10, 32)
 		count, err2 := strconv.ParseUint(q["count"], 10, 32)
 		if err1 != nil || err2 != nil {
-			meError(w, http.StatusBadRequest, "index ou count invalide")
+			meError(w, http.StatusBadRequest, "invalid index or count")
 			return
 		}
 		me.mu.Lock()
@@ -436,28 +504,28 @@ func (me *MediaEndpoint) handleCall(w http.ResponseWriter, r *http.Request) {
 	case "browse":
 		id, ok := q["id"]
 		if !ok {
-			meError(w, http.StatusBadRequest, "id absent")
+			meError(w, http.StatusBadRequest, "missing id")
 			return
 		}
 		items, alpha, found = me.browse(v, id)
 	case "list":
 		tag, err := strconv.ParseUint(q["tag"], 10, 32)
 		if err != nil {
-			meError(w, http.StatusNotFound, "tag invalide")
+			meError(w, http.StatusNotFound, "invalid tag")
 			return
 		}
 		items, alpha, found = me.list(v, int(tag))
 	case "link", "match", "search":
 		val, ok := decodeVal(q["val"])
 		if !ok {
-			meError(w, http.StatusBadRequest, "valeur invalide")
+			meError(w, http.StatusBadRequest, "invalid value")
 			return
 		}
 		tag := 0
 		if call != "search" {
 			t, err := strconv.ParseUint(q["tag"], 10, 32)
 			if err != nil {
-				meError(w, http.StatusNotFound, "tag invalide")
+				meError(w, http.StatusNotFound, "invalid tag")
 				return
 			}
 			tag = int(t)
@@ -472,7 +540,7 @@ func (me *MediaEndpoint) handleCall(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !found {
-		meError(w, http.StatusNotFound, "élément inconnu")
+		meError(w, http.StatusNotFound, "unknown item")
 		return
 	}
 	me.mu.Lock()
@@ -485,9 +553,13 @@ func (me *MediaEndpoint) handleCall(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
+// Endpoint-specific view of the library (sort orders, composers), computed
+// once per index.
 // Vue de la bibliothèque propre à l'endpoint (tris, compositeurs), calculée
 // une fois par index.
 
+// meComposer is a composer with the albums containing their works.
+// meComposer est un compositeur avec les albums contenant ses œuvres.
 type meComposer struct {
 	Key    string
 	Name   string
@@ -496,17 +568,21 @@ type meComposer struct {
 
 type meView struct {
 	ix          *Index
-	albums      []*Album // par titre
+	albums      []*Album // by title / par titre
 	albumAlpha  []int
 	artistAlpha []int
 	genreAlpha  []int
-	composers   []*meComposer // par nom
+	composers   []*meComposer // by name / par nom
 	compAlpha   []int
-	composer    map[string]*meComposer
+	composer    map[string]*meComposer // by key / par clé
 	playlists   []*Playlist
 	plAlpha     []int
 }
 
+// currentView returns the view of the current index, rebuilding it when
+// the index has changed.
+// currentView renvoie la vue de l'index courant, reconstruite quand
+// l'index a changé.
 func (me *MediaEndpoint) currentView() *meView {
 	ix := me.lib.Index()
 	if v := me.view.Load(); v != nil && v.ix == ix {
@@ -517,16 +593,8 @@ func (me *MediaEndpoint) currentView() *meView {
 	return v
 }
 
-/*
- * Ancien fonctionnement (0.0.4) conservé pour référence : rangée
- * « Classique » limitée aux compositeurs de ces genres.
- * Retiré en 0.0.5 à la demande de Bertrand (2026-10-07) : cette
- * spécificité venait de Kazoo Server et n'était pas à reprendre.
- *
- * var classicalGenres = map[string]bool{"classique": true, "opera": true, "baroque": true, "musique baroque": true,
- * 	"musique de chambre": true, "chamber music": true, "lyrique": true, "art lyrique": true, "symphonique": true}
- */
-
+// composerSplit turns the composer separators ";" and "/" into NUL for splitting.
+// composerSplit change les séparateurs de compositeurs « ; » et « / » en NUL pour le découpage.
 var composerSplit = strings.NewReplacer(";", "\x00", "/", "\x00")
 
 func buildMEView(ix *Index) *meView {
@@ -545,10 +613,11 @@ func buildMEView(ix *Index) *meView {
 	v.playlists = ix.Playlists
 	v.plAlpha = alphaOf(len(v.playlists), func(i int) string { return sortKey(v.playlists[i].Name) })
 
-	// Compositeurs de toutes les pistes, sans filtre de genre (0.0.5) : ils
-	// ne servent plus qu'à la recherche par compositeur de l'appli.
-	// Ancien code 0.0.4 : collect(onlyClassical bool) filtrait les albums
-	// sur classicalGenres, avec repli sur tous les albums si aucun.
+	// Composers of all tracks, without any genre filter; they are used by
+	// the app's composer search and browsing (there is no composer row).
+	// Compositeurs de toutes les pistes, sans filtre de genre ; ils servent
+	// à la recherche et à la navigation par compositeur de l'application
+	// (il n'y a pas de rangée des compositeurs).
 	collect := func() {
 		for _, a := range v.albums {
 			seen := map[*meComposer]bool{}
@@ -579,9 +648,12 @@ func buildMEView(ix *Index) *meView {
 	return v
 }
 
-// alphaOf : index alphabétique de l'appli, 28 cases dans l'ordre de la
-// liste : [0] avant A (chiffres…), [1..26] A à Z, [27] après Z. Les clés
-// sont pliées (minuscules sans accents), donc « É » compte avec « E ».
+// alphaOf builds the app's alphabetical index, 28 buckets in list order:
+// [0] before A (digits...), [1..26] A to Z, [27] after Z. Keys are folded
+// (lower case without accents), so "É" counts with "E".
+// alphaOf construit l'index alphabétique de l'application, 28 cases dans
+// l'ordre de la liste : [0] avant A (chiffres…), [1..26] A à Z, [27] après Z.
+// Les clés sont pliées (minuscules sans accents), donc « É » compte avec « E ».
 func alphaOf(n int, key func(int) string) []int {
 	if n == 0 {
 		return nil
@@ -593,6 +665,8 @@ func alphaOf(n int, key func(int) string) []int {
 	return a
 }
 
+// alphaBucket returns the alphaOf bucket of a key, from its first byte.
+// alphaBucket renvoie la case alphaOf d'une clé, d'après son premier octet.
 func alphaBucket(k string) int {
 	if k == "" {
 		return 0
@@ -610,10 +684,21 @@ func alphaBucket(k string) int {
 }
 
 // ---------------------------------------------------------------------------
-// Rangées de l'accueil (tabs) et listes
+// Home screen rows (tabs) and lists / Rangées de l'accueil (tabs) et listes
 
-// Chaque rangée a son propre tag : l'appli envoie « list?tag=T » et choisit
-// le rendu d'après le tag (vérifié dans l'appli) :
+// Each row has its own tag: the app sends "list?tag=T" and chooses the
+// rendering from the tag (observed in the app):
+//
+//	300, 2000, 200            thumbnails with cover art
+//	2001, 119                 track list
+//	108, 110                  stacked bubbles (artist photos)
+//	others                    bubbles
+//
+// The numbers only tell the rows apart: their meaning on the server side is
+// the one given in this table.
+//
+// Chaque rangée a son propre tag : l'application envoie « list?tag=T » et
+// choisit le rendu d'après le tag (relevé dans l'application) :
 //
 //	300, 2000, 200            vignettes avec pochette
 //	2001, 119                 liste de morceaux
@@ -638,38 +723,46 @@ const (
 	tagAlbums     = 200
 	tagArtists    = 110
 	tagGenres     = 114
-	tagComposers  = 2002 // plus de rangée depuis 0.0.5 (voir allTabs)
+	tagComposers  = 2002 // no home row, used by browsing only (see allTabs) / pas de rangée d'accueil, sert seulement à la navigation (voir allTabs)
 	tagPlaylists  = 208
+	tagLoved      = 2003 // Last.fm loved tracks / coups de cœur Last.fm
 )
 
+// allTabs lists the rows of the home screen, in order, with their English
+// titles (translated in tabs).
+// allTabs liste les rangées de l'accueil, dans l'ordre, avec leur titre
+// anglais (traduit dans tabs).
 func (me *MediaEndpoint) allTabs() []meTab {
 	return []meTab{
-		{"Albums favoris", tagFavAlbums},
-		{"Artistes favoris", tagFavArtists},
-		{"Genres favoris", tagFavGenres},
-		{"Derniers ajoutés", tagRecent},
-		{"Les plus écoutés", tagTopTracks},
-		{"Écoutés récemment", tagLastPlayed},
-		{"Artistes similaires (Last.fm)", tagSimilar},
+		{"Favourite albums", tagFavAlbums},
+		{"Favourite artists", tagFavArtists},
+		{"Favourite genres", tagFavGenres},
+		{"Recently added", tagRecent},
+		{"Most played", tagTopTracks},
+		{"Recently played", tagLastPlayed},
+		{"Last.fm loved tracks", tagLoved},
+		{"Similar artists (Last.fm)", tagSimilar},
 		{"Albums", tagAlbums},
-		{"Artistes", tagArtists},
+		{"Artists", tagArtists},
 		{"Genres", tagGenres},
-		// 0.0.5 : rangée {"Classique", tagComposers} retirée (spécificité Kazoo).
 		{"Playlists", tagPlaylists},
 	}
 }
 
-// tabs : « Titre,tag » ; les rangées vides sont omises (titres sans « , »
-// ni « ; », l'appli découpe dessus).
+// tabs returns the rows as "Title,tag"; empty rows are omitted (titles
+// must contain no "," or ";", the app splits on them).
+// tabs renvoie les rangées sous la forme « Titre,tag » ; les rangées vides
+// sont omises (titres sans « , » ni « ; », l'application découpe dessus).
 func (me *MediaEndpoint) tabs(v *meView) []string {
+	lang := me.lib.lang()
 	out := []string{}
 	for _, t := range me.allTabs() {
 		if items, _, ok := me.list(v, t.tag); ok && len(items) > 0 {
-			out = append(out, t.title+","+strconv.Itoa(t.tag))
+			out = append(out, tr(lang, t.title)+","+strconv.Itoa(t.tag))
 		}
 	}
 	if len(out) == 0 {
-		out = append(out, "Albums,"+strconv.Itoa(tagAlbums))
+		out = append(out, tr(lang, "Albums")+","+strconv.Itoa(tagAlbums))
 	}
 	return out
 }
@@ -706,6 +799,8 @@ func trackItems(list []*Track) []meItem {
 	return out
 }
 
+// list returns the items of a row or full list, with its alphabetical index.
+// list renvoie les éléments d'une rangée ou d'une liste complète, avec son index alphabétique.
 func (me *MediaEndpoint) list(v *meView, tag int) ([]meItem, []int, bool) {
 	ix := v.ix
 	ls := me.lib
@@ -726,6 +821,8 @@ func (me *MediaEndpoint) list(v *meView, tag int) ([]meItem, []int, bool) {
 		return genreItems(ix.Genres), v.genreAlpha, true
 	case tagTopTracks:
 		return trackItems(ls.topTracks(ix, meTopCount)), nil, true
+	case tagLoved:
+		return trackItems(ls.lovedTracks(ix, lovedShow)), nil, true
 	case tagLastPlayed:
 		return trackItems(ls.recentTracks(ix, meTopCount)), nil, true
 	case tagSimilar:
@@ -747,18 +844,24 @@ func (me *MediaEndpoint) list(v *meView, tag int) ([]meItem, []int, bool) {
 }
 
 // ---------------------------------------------------------------------------
-// Navigation
+// Browsing / Navigation
 
-// Identifiants d'éléments : « al.<clé> », « ar.<clé> »… Les clés ne
-// contiennent que [0-9a-z] : l'appli les remet sans échappement dans l'URL.
+// browse lists the children of an item. Item ids are "al.<key>",
+// "ar.<key>"...; keys contain only [0-9a-z] because the app puts them back
+// into the URL without escaping.
+// browse liste les enfants d'un élément. Identifiants d'éléments :
+// « al.<clé> », « ar.<clé> »… Les clés ne contiennent que [0-9a-z] :
+// l'application les remet sans échappement dans l'URL.
 func (me *MediaEndpoint) browse(v *meView, id string) ([]meItem, []int, bool) {
 	ix := v.ix
 	if id == "" || id == "0" {
+		// Root (folder browsing): the main views.
 		// Racine (navigation par dossiers) : les grandes vues.
+		lang := me.lib.lang()
 		var out []meItem
-		for _, t := range []struct{ id, title string }{{"v.albums", "Albums"}, {"v.artists", "Artistes"},
-			{"v.genres", "Genres"}, {"v.playlists", "Playlists"}} { // 0.0.5 : {"v.composers", "Classique"} retiré
-			out = append(out, meItem{kind: 'v', id: t.id, title: t.title})
+		for _, t := range []struct{ id, title string }{{"v.albums", "Albums"}, {"v.artists", "Artists"},
+			{"v.genres", "Genres"}, {"v.playlists", "Playlists"}} {
+			out = append(out, meItem{kind: 'v', id: t.id, title: tr(lang, t.title)})
 		}
 		return out, nil, true
 	}
@@ -782,7 +885,10 @@ func (me *MediaEndpoint) browse(v *meView, id string) ([]meItem, []int, bool) {
 			return trackItems(a.Tracks), nil, true
 		}
 	case "ar":
-		// Albums de l'artiste, du plus récent au plus ancien. Rien d'autre
+		// The artist's albums, newest first. Nothing else here (no
+		// "similar" folder): "Play artist" plays everything this list
+		// contains.
+		// Albums de l'artiste, du plus récent au plus vieux. Rien d'autre
 		// ici (pas de dossier « similaires ») : « Lire l'artiste » joue tout
 		// ce que contient cette liste.
 		if ar := ix.Artist(key); ar != nil {
@@ -805,14 +911,19 @@ func (me *MediaEndpoint) browse(v *meView, id string) ([]meItem, []int, bool) {
 	return nil, nil, false
 }
 
+// sortedByTitle returns a copy of list sorted by folded title.
+// sortedByTitle renvoie une copie de list triée par titre plié.
 func sortedByTitle(list []*Album) []*Album {
 	out := append([]*Album(nil), list...)
 	sort.SliceStable(out, func(i, j int) bool { return fold(out[i].Title) < fold(out[j].Title) })
 	return out
 }
 
-// link : correspondance exacte (albums d'un artiste, d'un genre…). L'appli
-// actuelle ne s'en sert pas ; présent pour l'attribut « Link ».
+// link returns exact matches (albums of an artist, of a genre...). The
+// current app does not use it; it is present for the "Link" attribute.
+// link renvoie les correspondances exactes (albums d'un artiste, d'un
+// genre…). L'application actuelle ne s'en sert pas ; présent pour
+// l'attribut « Link ».
 func (me *MediaEndpoint) link(v *meView, tag int, val string) ([]meItem, []int, bool) {
 	ix := v.ix
 	switch tag {
@@ -853,9 +964,12 @@ func (me *MediaEndpoint) link(v *meView, tag int, val string) ([]meItem, []int, 
 }
 
 // ---------------------------------------------------------------------------
-// Recherche
+// Search / Recherche
 
-// matcher : l'appli envoie le texte tapé suivi de « * » (préfixe). On
+// matcher: the app sends the typed text followed by "*" (prefix). The
+// search ignores accents and case and looks anywhere in the name; names
+// that start with the text (or with a word starting with it) come first.
+// matcher : l'application envoie le texte tapé suivi de « * » (préfixe). On
 // cherche sans tenir compte des accents ni de la casse, dans tout le nom ;
 // les noms qui commencent par le texte (ou dont un mot commence par lui)
 // viennent en premier.
@@ -866,7 +980,8 @@ func newMatcher(val string) (matcher, bool) {
 	return matcher{term: t}, t != ""
 }
 
-// score : 0 = pas trouvé, 3 = début du nom, 2 = début d'un mot, 1 = ailleurs.
+// score returns 0 = not found, 3 = start of the name, 2 = start of a word, 1 = elsewhere.
+// score renvoie 0 = pas trouvé, 3 = début du nom, 2 = début d'un mot, 1 = ailleurs.
 func (m matcher) score(s string) int {
 	f := fold(s)
 	i := strings.Index(f, m.term)
@@ -887,6 +1002,8 @@ type scored[T any] struct {
 	key   string
 }
 
+// rank sorts hits by score then key and keeps at most meMatchLimit.
+// rank trie les résultats par score puis clé et en garde au plus meMatchLimit.
 func rank[T any](list []scored[T]) []T {
 	sort.SliceStable(list, func(i, j int) bool {
 		if list[i].score != list[j].score {
@@ -901,11 +1018,13 @@ func rank[T any](list []scored[T]) []T {
 	return out
 }
 
+// match filters one kind of item by name (the app's search filters).
+// match filtre un type d'élément par nom (filtres de recherche de l'application).
 func (me *MediaEndpoint) match(v *meView, tag int, val string) ([]meItem, []int, bool) {
 	m, ok := newMatcher(val)
 	ix := v.ix
 	switch tag {
-	case 200, 201: // filtre Album (l'appli envoie 201)
+	case 200, 201: // Album filter (the app sends 201) / filtre Album (l'application envoie 201)
 		if !ok {
 			return []meItem{}, nil, true
 		}
@@ -916,7 +1035,7 @@ func (me *MediaEndpoint) match(v *meView, tag int, val string) ([]meItem, []int,
 			}
 		}
 		return albumItems(rank(hits)), nil, true
-	case 108, 202: // filtre Artiste
+	case 108, 202: // Artist filter / filtre Artiste
 		if !ok {
 			return []meItem{}, nil, true
 		}
@@ -927,7 +1046,7 @@ func (me *MediaEndpoint) match(v *meView, tag int, val string) ([]meItem, []int,
 			}
 		}
 		return artistItems(rank(hits)), nil, true
-	case 110: // filtre Compositeur : tous les compositeurs des pistes
+	case 110: // Composer filter: all track composers / filtre Compositeur : tous les compositeurs des pistes
 		if !ok {
 			return []meItem{}, nil, true
 		}
@@ -942,7 +1061,7 @@ func (me *MediaEndpoint) match(v *meView, tag int, val string) ([]meItem, []int,
 			out = append(out, meItem{kind: 'c', comp: c})
 		}
 		return out, nil, true
-	case 114:
+	case 114: // Genre filter / filtre Genre
 		if !ok {
 			return []meItem{}, nil, true
 		}
@@ -953,7 +1072,7 @@ func (me *MediaEndpoint) match(v *meView, tag int, val string) ([]meItem, []int,
 			}
 		}
 		return genreItems(rank(hits)), nil, true
-	case 118, 119: // filtre Piste (l'appli envoie 119)
+	case 118, 119: // Track filter (the app sends 119) / filtre Piste (l'application envoie 119)
 		if !ok {
 			return []meItem{}, nil, true
 		}
@@ -970,8 +1089,10 @@ func (me *MediaEndpoint) match(v *meView, tag int, val string) ([]meItem, []int,
 	return nil, nil, false
 }
 
-// searchTracks : recherche globale (verbe « search ») : morceaux dont le
-// titre, l'artiste ou l'album contient le texte.
+// searchTracks is the global search ("search" verb): tracks whose title,
+// artist or album contains the text.
+// searchTracks est la recherche globale (verbe « search ») : morceaux dont
+// le titre, l'artiste ou l'album contient le texte.
 func (me *MediaEndpoint) searchTracks(v *meView, val string) []meItem {
 	m, ok := newMatcher(val)
 	if !ok {
@@ -993,6 +1114,8 @@ func (me *MediaEndpoint) searchTracks(v *meView, val string) []meItem {
 	return trackItems(rank(hits))
 }
 
+// trackTitle returns the title tag, or the file name without extension.
+// trackTitle renvoie l'étiquette titre, ou le nom du fichier sans extension.
 func trackTitle(t *Track) string {
 	if t.Title != "" {
 		return t.Title
@@ -1001,17 +1124,22 @@ func trackTitle(t *Track) string {
 }
 
 // ---------------------------------------------------------------------------
-// Lecture des éléments
+// Reading items / Lecture des éléments
 
-// meDatum : un élément tel que l'appli le lit. Toutes les valeurs sont des
-// chaînes ; un tag n'apparaît qu'une fois ; seuls des tags connus de
-// l'appli sont émis (un tag inconnu ferait échouer toute la page).
+// meDatum is an item as the app reads it. All values are strings; a tag
+// appears only once; only tags known to the app are sent (an unknown tag
+// would make the whole page fail).
+// meDatum est un élément tel que l'application le lit. Toutes les valeurs
+// sont des chaînes ; un tag n'apparaît qu'une fois ; seuls des tags connus
+// de l'application sont émis (un tag inconnu ferait échouer toute la page).
 type meDatum struct {
 	Id       string     `json:"Id"`
 	Type     []string   `json:"Type"`
 	Metadata [][]string `json:"Metadata"`
 }
 
+// read returns count items of the snapshot from index.
+// read renvoie count éléments de l'instantané à partir de index.
 func (me *MediaEndpoint) read(items []meItem, index, count int, base string) []meDatum {
 	out := []meDatum{}
 	if index >= len(items) {
@@ -1024,8 +1152,12 @@ func (me *MediaEndpoint) read(items []meItem, index, count int, base string) []m
 	return out
 }
 
+// metaList is the Metadata list of a meDatum: [tag, values...] entries.
+// metaList est la liste Metadata d'un meDatum : entrées [tag, valeurs...].
 type metaList [][]string
 
+// add appends a tag with its non-empty values; nothing if all are empty.
+// add ajoute un tag avec ses valeurs non vides ; rien si toutes sont vides.
 func (m *metaList) add(tag int, vals ...string) {
 	var keep []string
 	for _, v := range vals {
@@ -1038,15 +1170,20 @@ func (m *metaList) add(tag int, vals ...string) {
 	}
 }
 
+// num appends a positive number.
+// num ajoute un nombre positif.
 func (m *metaList) num(tag, v int) {
 	if v > 0 {
 		m.add(tag, strconv.Itoa(v))
 	}
 }
 
+// art appends the artwork URL under tags 122 and 402.
+// art ajoute l'URL de l'image sous les tags 122 et 402.
 func (m *metaList) art(base, u string) {
 	if u != "" {
-		// URL absolue sans « ? » : l'appli ajoute « ?size=0 ».
+		// Absolute URL without "?": the app appends "?size=0".
+		// URL absolue sans « ? » : l'application ajoute « ?size=0 ».
 		m.add(122, base+u)
 		m.add(402, base+u)
 	}
@@ -1060,6 +1197,8 @@ func genreNames(gs []*Genre) []string {
 	return out
 }
 
+// datum converts a snapshot item into the JSON the app reads.
+// datum convertit un élément d'instantané en JSON lu par l'application.
 func (me *MediaEndpoint) datum(it meItem, base string) meDatum {
 	var m metaList
 	ls := me.lib
@@ -1112,13 +1251,17 @@ func (me *MediaEndpoint) datum(it meItem, base string) meDatum {
 	return me.trackDatum(it.track, base)
 }
 
-// codecOf : codec en minuscules, comme l'attend l'appli pour son badge
-// CD / HD (flac et alac reconnus sans perte).
+// codecOf returns the codec in lower case, as the app expects for its CD / HD
+// badge (flac and alac are recognised as lossless).
+// codecOf renvoie le codec en minuscules, comme l'attend l'application pour
+// son badge CD / HD (flac et alac reconnus sans perte).
 func codecOf(t *Track) string {
 	switch strings.ToLower(path.Ext(t.Path)) {
 	case ".flac":
 		return "flac"
 	case ".m4a", ".mp4", ".alac", ".aac":
+		// AAC has no PCM bit depth, so a bit depth means ALAC.
+		// L'AAC n'a pas de profondeur de bits PCM : une profondeur indique de l'ALAC.
 		if t.Bits > 0 {
 			return "alac"
 		}
@@ -1143,6 +1286,8 @@ func codecOf(t *Track) string {
 	return ""
 }
 
+// trackDatum converts a track into the JSON the app reads.
+// trackDatum convertit une piste en JSON lu par l'application.
 func (me *MediaEndpoint) trackDatum(t *Track, base string) meDatum {
 	var m metaList
 	a := me.lib.Index().AlbumOfTrack(t)
@@ -1171,9 +1316,9 @@ func (me *MediaEndpoint) trackDatum(t *Track, base string) meDatum {
 	m.num(102, t.Channels)
 	if t.Bits > 0 && t.SampleRate > 0 {
 		ch := max(t.Channels, 1)
-		m.num(105, t.SampleRate*t.Bits*ch)
+		m.num(105, t.SampleRate*t.Bits*ch) // PCM bit rate / débit PCM
 	}
-	if trackQuality(t).Lossless() { // 0.0.5 : Valid() est aussi vrai pour le MP3
+	if trackQuality(t).Lossless() { // Lossless, not Valid(): Valid() is also true for MP3 / Lossless et non Valid() : Valid() est aussi vrai pour le MP3
 		m.add(124, "LOSSLESS")
 	}
 	if a != nil && a.Art.Valid() {

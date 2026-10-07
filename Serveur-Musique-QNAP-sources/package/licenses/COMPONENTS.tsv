@@ -1,0 +1,7 @@
+component	version	licence	source	files
+ohscrobbler (the package program)	see qpkg.cfg	MIT (MIT.txt)	this repository (scrobbler/)	ohscrobbler
+badge logos (built into ohscrobbler)	-	trademarks of their owners, personal use	MP3: seeklogo.com; CD Audio: Wikimedia Commons; Hi-Res Audio: Japan Audio Society	scrobbler/badges/mp3.png, cd.png, hires.png
+Inter Bold font (badge resolution text, pre-rendered)	4.0	OFL-1.1 (OFL-1.1-Inter.txt)	https://github.com/rsms/inter	scrobbler/badges/font.png, font.json
+musl (loader for su-exec)	1.2.6-r2 (Alpine Linux 3.24)	MIT (MIT.txt)	https://musl.libc.org/	tools/lib/ld-musl-aarch64.so.1
+su-exec	0.3-r0 (Alpine Linux 3.24)	MIT (MIT.txt)	https://github.com/ncopa/su-exec	tools/bin/su-exec
+qinstall.sh (QNAP QDK 2.5.3 installer)	2.5.3	GPL-2.0, (c) QNAP Systems	https://github.com/qnap-dev/QDK	package/qinstall.sh (inside the .qpkg control part)

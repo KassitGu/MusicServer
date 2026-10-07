@@ -1,12 +1,24 @@
 package main
 
+// ContentDirectory: the tree shown by the control app.
+//
+//   0  Musique NAS
+//   ├── genres          Genres: favourites (9 at most), then "All genres…"
+//   ├── artists         Artists: most played, recently added, all
+//   ├── albums          Albums: most played, recently added, all
+//   └── playlists       Playlists (library .m3u files and server playlists)
+//
+// Identifiers: g/<key> genre, ar/<key> artist, al/<key> album, t/<id> track,
+// pl/<key> playlist. Keys are stable from one scan to the next (derived from
+// names and paths), so that the control app's favourites stay valid.
+//
 // ContentDirectory : l'arborescence que l'application de contrôle affiche.
 //
 //   0  Musique NAS
 //   ├── genres          Genres : favoris (9 au plus) puis « Tous les genres… »
 //   ├── artists         Artistes : plus écoutés, derniers ajoutés, tous
 //   ├── albums          Albums : plus écoutés, derniers ajoutés, tous
-//   └── playlists       Playlists (.m3u de la bibliothèque)
+//   └── playlists       Playlists (.m3u de la bibliothèque et playlists du serveur)
 //
 // Identifiants : g/<clé> genre, ar/<clé> artiste, al/<clé> album,
 // t/<id> piste, pl/<clé> playlist. Les clés sont stables d'une indexation
@@ -22,8 +34,12 @@ import (
 	"strings"
 )
 
+// tileCount is the number of items in the short home-screen lists.
+// tileCount est le nombre d'éléments des listes courtes de l'accueil.
 const tileCount = 9
 
+// didlEntry is one container or item of a Browse or Search answer.
+// didlEntry est un conteneur ou un élément d'une réponse Browse ou Search.
 type didlEntry struct {
 	container bool
 	id        string
@@ -38,6 +54,8 @@ type didlEntry struct {
 	album     *Album
 }
 
+// handleCDS answers the SOAP actions of the ContentDirectory service.
+// handleCDS répond aux actions SOAP du service ContentDirectory.
 func (ms *MediaServer) handleCDS(w http.ResponseWriter, r *http.Request) {
 	action, args, err := parseSOAP(r)
 	if err != nil {
@@ -97,6 +115,8 @@ func (ms *MediaServer) handleCDS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// page returns the requested slice of list; a count of 0 means "all".
+// page renvoie la tranche demandée de list ; un nombre de 0 veut dire « tout ».
 func page(list []didlEntry, start, count int) []didlEntry {
 	if start < 0 || start >= len(list) {
 		return nil
@@ -109,12 +129,17 @@ func page(list []didlEntry, start, count int) []didlEntry {
 }
 
 // ---------------------------------------------------------------------------
+// Entry construction
 // Construction des entrées
 
+// folder returns a plain container entry.
+// folder renvoie une entrée de conteneur simple.
 func folder(id, title string, n int) didlEntry {
 	return didlEntry{container: true, id: id, title: title, class: "object.container.storageFolder", children: n}
 }
 
+// genreEntry uses the cover of the genre's latest album as its picture.
+// genreEntry prend la pochette du dernier album du genre comme image.
 func (ls *LibraryService) genreEntry(g *Genre) didlEntry {
 	e := didlEntry{container: true, id: "g/" + g.Key, title: g.Name, class: "object.container.genre.musicGenre", children: len(g.Albums)}
 	if a := latestWithArt(g.Albums); a != nil {
@@ -123,9 +148,12 @@ func (ls *LibraryService) genreEntry(g *Genre) didlEntry {
 	return e
 }
 
-// artistEntry : photo de l'artiste si le service choisi l'a fournie, sinon
-// pochette de son dernier album (adresse différente : l'application de contrôle
-// recharge l'image quand la photo arrive).
+// artistEntry uses the artist photo if the chosen service supplied it,
+// otherwise the cover of their latest album (a different URL, so the control
+// app reloads the picture when the photo arrives).
+// artistEntry prend la photo de l'artiste si le service choisi l'a fournie,
+// sinon la pochette de son dernier album (adresse différente : l'application
+// de contrôle recharge l'image quand la photo arrive).
 func (ls *LibraryService) artistEntry(ar *Artist) didlEntry {
 	e := didlEntry{container: true, id: "ar/" + ar.Key, title: ar.Name, class: "object.container.person.musicArtist",
 		children: len(ar.Albums)}
@@ -137,16 +165,20 @@ func (ls *LibraryService) artistEntry(ar *Artist) didlEntry {
 	return e
 }
 
+// albumEntry returns an album container with its badged cover.
+// albumEntry renvoie un conteneur d'album avec sa pochette à badge.
 func albumEntry(a *Album) didlEntry {
 	e := didlEntry{container: true, id: "al/" + a.Key, title: a.Title, class: "object.container.album.musicAlbum",
 		children: len(a.Tracks), artist: a.Artist, year: a.Year, album: a}
 	if a.Art.Valid() {
-		// 0.0.4 : tuile d'album avec badge de qualité (ancienne adresse
-		// "/art/album/", sans badge, gardée pour genres et pistes).
-		// 0.0.6 : le code du dessin (b3-…) fait partie de l'adresse. Les
-		// applications gardent les images en mémoire par adresse : en 0.0.5,
-		// l'adresse inchangée leur faisait garder l'ancien badge 0.0.4.
-		// Ancien code : e.art = "/art/badge/" + a.Key + ".jpg"
+		// Album tile with the quality badge ("/art/album/", without a badge,
+		// is used for genres and tracks). The badge drawing code is part of
+		// the URL: the apps cache pictures by URL, so a new drawing needs a
+		// new URL to be shown.
+		// Tuile d'album avec badge de qualité ("/art/album/", sans badge,
+		// sert aux genres et aux pistes). Le code du dessin fait partie de
+		// l'adresse : les applications gardent les images en mémoire par
+		// adresse, un nouveau dessin doit donc avoir une nouvelle adresse.
 		e.art = "/art/badge/" + a.Key + "-" + albumQuality(a).code() + ".jpg"
 	}
 	if len(a.Genres) > 0 {
@@ -155,10 +187,14 @@ func albumEntry(a *Album) didlEntry {
 	return e
 }
 
+// trackEntry returns the item entry of a track.
+// trackEntry renvoie l'entrée d'élément d'une piste.
 func trackEntry(t *Track) didlEntry {
 	return didlEntry{id: "t/" + t.ID, title: t.Title, class: "object.item.audioItem.musicTrack", track: t}
 }
 
+// latestWithArt returns the most recently added album that has a cover.
+// latestWithArt renvoie l'album ajouté le plus récemment qui a une pochette.
 func latestWithArt(list []*Album) *Album {
 	var best *Album
 	for _, a := range list {
@@ -169,40 +205,45 @@ func latestWithArt(list []*Album) *Album {
 	return best
 }
 
+// children lists the children of a container (BrowseDirectChildren); false
+// when the object is unknown.
+// children liste les enfants d'un conteneur (BrowseDirectChildren) ; false
+// si l'objet est inconnu.
 func (ls *LibraryService) children(id string) ([]didlEntry, bool) {
 	ix := ls.Index()
+	lang := ls.lang()
 	var out []didlEntry
 	switch {
 	case id == "0":
-		out = append(out, folder("genres", "Genres", len(ls.favoriteGenres(ix))+1))
+		out = append(out, folder("genres", tr(lang, "Genres"), len(ls.favoriteGenres(ix))+1))
 		n := 2
 		if len(ls.topArtists(ix, tileCount)) > 0 {
 			n++
 		}
-		out = append(out, folder("artists", "Artistes", n))
+		out = append(out, folder("artists", tr(lang, "Artists"), n))
 		n = 2
 		if len(ls.topAlbums(ix, tileCount)) > 0 {
 			n++
 		}
-		out = append(out, folder("albums", "Albums", n))
+		out = append(out, folder("albums", tr(lang, "Albums"), n))
 		if len(ix.Playlists) > 0 {
-			out = append(out, folder("playlists", "Playlists", len(ix.Playlists)))
+			out = append(out, folder("playlists", tr(lang, "Playlists"), len(ix.Playlists)))
 		}
 	case id == "genres":
 		for _, g := range ls.favoriteGenres(ix) {
 			out = append(out, ls.genreEntry(g))
 		}
-		out = append(out, folder("genres/all", "Tous les genres…", len(ix.Genres)))
+		out = append(out, folder("genres/all", tr(lang, "All genres…"), len(ix.Genres)))
 	case id == "genres/all":
 		for _, g := range ix.Genres {
 			out = append(out, ls.genreEntry(g))
 		}
 	case id == "artists":
 		if top := ls.topArtists(ix, tileCount); len(top) > 0 {
-			out = append(out, folder("artists/top", "Les plus écoutés", len(top)))
+			out = append(out, folder("artists/top", tr(lang, "Most played"), len(top)))
 		}
-		out = append(out, folder("artists/recent", "Derniers ajoutés", len(ix.RecentArtists(tileCount))))
-		out = append(out, folder("artists/all", "Tous les artistes…", len(ix.Artists)))
+		out = append(out, folder("artists/recent", tr(lang, "Recently added"), len(ix.RecentArtists(tileCount))))
+		out = append(out, folder("artists/all", tr(lang, "All artists…"), len(ix.Artists)))
 	case id == "artists/top":
 		for _, ar := range ls.topArtists(ix, tileCount) {
 			out = append(out, ls.artistEntry(ar))
@@ -217,10 +258,10 @@ func (ls *LibraryService) children(id string) ([]didlEntry, bool) {
 		}
 	case id == "albums":
 		if top := ls.topAlbums(ix, tileCount); len(top) > 0 {
-			out = append(out, folder("albums/top", "Les plus écoutés", len(top)))
+			out = append(out, folder("albums/top", tr(lang, "Most played"), len(top)))
 		}
-		out = append(out, folder("albums/recent", "Derniers ajoutés", min(tileCount, len(ix.Recent))))
-		out = append(out, folder("albums/all", "Tous les albums…", len(ix.Albums)))
+		out = append(out, folder("albums/recent", tr(lang, "Recently added"), min(tileCount, len(ix.Recent))))
+		out = append(out, folder("albums/all", tr(lang, "All albums…"), len(ix.Albums)))
 	case id == "albums/top":
 		for _, a := range ls.topAlbums(ix, tileCount) {
 			out = append(out, albumEntry(a))
@@ -282,7 +323,8 @@ func (ls *LibraryService) children(id string) ([]didlEntry, bool) {
 	return out, true
 }
 
-// metadata : l'objet lui-même et son parent (BrowseMetadata).
+// metadata returns the object itself and its parent (BrowseMetadata).
+// metadata renvoie l'objet lui-même et son parent (BrowseMetadata).
 func (ls *LibraryService) metadata(id string) (didlEntry, string, bool) {
 	ix := ls.Index()
 	switch id {
@@ -336,11 +378,20 @@ func (ls *LibraryService) metadata(id string) (didlEntry, string, bool) {
 }
 
 // ---------------------------------------------------------------------------
+// Search (simple): titles, artists and albums containing the searched text.
 // Recherche (simple) : titres, artistes, albums contenant le texte cherché.
 
+// critValue extracts the text values of a UPnP search criteria string, and
+// critClass its class restriction; other operators are ignored.
+// critValue extrait les valeurs texte d'un critère de recherche UPnP, et
+// critClass sa restriction de classe ; les autres opérateurs sont ignorés.
 var critValue = regexp.MustCompile(`(dc:title|upnp:artist|upnp:album|upnp:genre|dc:creator)\s+(contains|=)\s+"((?:[^"\\]|\\.)*)"`)
 var critClass = regexp.MustCompile(`upnp:class\s+(derivedfrom|=)\s+"([^"]*)"`)
 
+// search returns the artists, albums and tracks whose folded text contains
+// every searched term (200 results at most).
+// search renvoie les artistes, albums et pistes dont le texte plié contient
+// tous les termes cherchés (200 résultats au plus).
 func (ls *LibraryService) search(criteria string) []didlEntry {
 	ix := ls.Index()
 	var terms []string
@@ -396,11 +447,15 @@ func (ls *LibraryService) search(criteria string) []didlEntry {
 // ---------------------------------------------------------------------------
 // DIDL-Lite
 
+// fmtDuration formats a duration as H:MM:SS.mmm (UPnP res@duration).
+// fmtDuration met en forme une durée en H:MM:SS.mmm (UPnP res@duration).
 func fmtDuration(ms int64) string {
 	s := ms / 1000
 	return fmt.Sprintf("%d:%02d:%02d.%03d", s/3600, (s/60)%60, s%60, ms%1000)
 }
 
+// dlnaProfile returns the DLNA.ORG_PN part for the formats that have one.
+// dlnaProfile renvoie la partie DLNA.ORG_PN pour les formats qui en ont une.
 func dlnaProfile(mime string) string {
 	switch mime {
 	case "audio/flac", "audio/x-flac":
@@ -411,10 +466,18 @@ func dlnaProfile(mime string) string {
 	return ""
 }
 
+// protocolInfo returns the res@protocolInfo value: HTTP streaming with
+// byte-range seeking (DLNA.ORG_OP=01).
+// protocolInfo renvoie la valeur de res@protocolInfo : diffusion HTTP avec
+// positionnement par plage d'octets (DLNA.ORG_OP=01).
 func protocolInfo(mime string) string {
 	return "http-get:*:" + mime + ":" + dlnaProfile(mime) + "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
 }
 
+// renderDIDL writes the entries as a DIDL-Lite document; URLs are made
+// absolute with base.
+// renderDIDL écrit les entrées en document DIDL-Lite ; les adresses sont
+// rendues absolues avec base.
 func (ls *LibraryService) renderDIDL(entries []didlEntry, parent, base string) string {
 	ix := ls.Index()
 	var b strings.Builder
@@ -432,6 +495,7 @@ func (ls *LibraryService) renderDIDL(entries []didlEntry, parent, base string) s
 	for _, e := range entries {
 		p := parent
 		if p == "" || e.id == parent {
+			// Search or metadata: the parent is computed.
 			// Recherche ou métadonnées : parent calculé.
 			if _, pp, ok := ls.metadata(e.id); ok {
 				p = pp
@@ -512,6 +576,10 @@ func (ls *LibraryService) renderDIDL(entries []didlEntry, parent, base string) s
 	return b.String()
 }
 
+// trackURL returns the path of a track's audio file; the extension helps
+// players that guess the format from the URL.
+// trackURL renvoie le chemin du fichier audio d'une piste ; l'extension aide
+// les lecteurs qui devinent le format d'après l'adresse.
 func trackURL(t *Track) string {
 	ext := strings.ToLower(path.Ext(t.Path))
 	if ext == "" || len(ext) > 6 {

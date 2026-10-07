@@ -1,5 +1,9 @@
 package main
 
+// Library indexer: walks the music folder, reads the tags of new or changed
+// files, finds cover pictures and playlists, and keeps the result in a cache
+// file so that a restart is immediate (only changed files are read again).
+//
 // Indexeur de la bibliothèque : parcourt le dossier musique, lit les
 // étiquettes des fichiers nouveaux ou modifiés, repère les pochettes et les
 // playlists, et garde le résultat dans un fichier cache pour que le
@@ -21,6 +25,7 @@ import (
 	"unicode/utf8"
 )
 
+// audioTypes lists the extensions indexed and the MIME type announced to players.
 // audioTypes : extensions lues et type MIME annoncé aux lecteurs.
 var audioTypes = map[string]string{
 	".flac": "audio/flac", ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".mp4": "audio/mp4", ".alac": "audio/mp4",
@@ -29,11 +34,17 @@ var audioTypes = map[string]string{
 	".wv": "audio/x-wavpack",
 }
 
-// Noms de pochettes reconnus, par ordre de préférence (sans extension).
+// coverNames lists the recognised cover file names, in order of preference
+// (without extension).
+// coverNames : noms de pochettes reconnus, par ordre de préférence (sans extension).
 var coverNames = []string{"cover", "folder", "front", "album", "albumart", "albumartsmall", "pochette", "jacket"}
 
+// cacheVersion is the cache file format; a different value discards the cache.
+// cacheVersion est le format du fichier cache ; une autre valeur l'écarte.
 const cacheVersion = 1
 
+// scanCache is the on-disk index kept between restarts.
+// scanCache est l'index enregistré sur le disque entre deux démarrages.
 type scanCache struct {
 	Version   int           `json:"v"`
 	Root      string        `json:"root"`
@@ -42,21 +53,27 @@ type scanCache struct {
 	Playlists []RawPlaylist `json:"playlists"`
 }
 
+// ScanStatus reports the progress of the current or last scan.
+// ScanStatus décrit l'avancement de l'indexation en cours ou de la dernière.
 type ScanStatus struct {
 	Running   bool
 	Started   time.Time
 	Finished  time.Time
 	Files     int
-	Read      int // fichiers dont les étiquettes ont été (re)lues
+	Read      int // files whose tags were (re)read / fichiers dont les étiquettes ont été (re)lues
 	Errors    int
 	LastError string
 }
 
+// Scanner indexes the music folder and keeps the previous result to skip
+// unchanged files.
+// Scanner indexe le dossier musique et garde le résultat précédent pour
+// sauter les fichiers inchangés.
 type Scanner struct {
 	Root      string
 	CacheFile string
 
-	run   sync.Mutex // une indexation à la fois
+	run   sync.Mutex // one scan at a time / une indexation à la fois
 	mu    sync.Mutex
 	st    ScanStatus
 	prev  map[string]*Track
@@ -64,16 +81,21 @@ type Scanner struct {
 	clock func() time.Time
 }
 
+// NewScanner returns a scanner for root, with its cache in cacheFile.
+// NewScanner renvoie un indexeur pour root, avec son cache dans cacheFile.
 func NewScanner(root, cacheFile string) *Scanner {
 	return &Scanner{Root: filepath.Clean(root), CacheFile: cacheFile, clock: time.Now}
 }
 
+// Status returns a copy of the scan status.
+// Status renvoie une copie de l'état de l'indexation.
 func (s *Scanner) Status() ScanStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.st
 }
 
+// Dirs returns the folders seen during the last scan (for inotify watching).
 // Dirs : dossiers vus à la dernière indexation (surveillance inotify).
 func (s *Scanner) Dirs() []string {
 	s.mu.Lock()
@@ -81,6 +103,7 @@ func (s *Scanner) Dirs() []string {
 	return append([]string(nil), s.dirs...)
 }
 
+// LoadCache reloads the index of the previous session (same music folder).
 // LoadCache relit l'index de la session précédente (même dossier musique).
 func (s *Scanner) LoadCache() ([]*Track, []RawPlaylist, bool) {
 	var c scanCache
@@ -97,6 +120,8 @@ func (s *Scanner) LoadCache() ([]*Track, []RawPlaylist, bool) {
 	return c.Tracks, c.Playlists, true
 }
 
+// Scan walks the library. Unchanged files (same size and modification time)
+// reuse the information from the previous scan.
 // Scan parcourt la bibliothèque. Les fichiers inchangés (taille et date
 // identiques) reprennent les informations de l'indexation précédente.
 func (s *Scanner) Scan(ctx context.Context) ([]*Track, []RawPlaylist, error) {
@@ -130,11 +155,13 @@ func (s *Scanner) Scan(ctx context.Context) ([]*Track, []RawPlaylist, error) {
 	}
 	if werr := writeJSONCompact(s.CacheFile, scanCache{Version: cacheVersion, Root: s.Root, Scanned: scanned,
 		Tracks: w.tracks, Playlists: w.lists}); werr != nil {
-		logf("index : cache non enregistré : %v", werr)
+		logf("index: cache not saved: %v", werr)
 	}
 	return w.tracks, w.lists, nil
 }
 
+// walker holds the state of one scan.
+// walker contient l'état d'une indexation.
 type walker struct {
 	s      *Scanner
 	ctx    context.Context
@@ -145,18 +172,25 @@ type walker struct {
 	dirs   []string
 }
 
+// note updates the shared scan status under its lock.
+// note met à jour l'état partagé de l'indexation sous son verrou.
 func (w *walker) note(f func(st *ScanStatus)) {
 	w.s.mu.Lock()
 	f(&w.s.st)
 	w.s.mu.Unlock()
 }
 
+// skipDir reports QTS system folders (@..., #recycle...) and hidden folders.
 // skipDir : dossiers techniques de QTS et dossiers cachés.
 func skipDir(name string) bool {
 	return strings.HasPrefix(name, ".") || strings.HasPrefix(name, "@") || strings.HasPrefix(name, "#") ||
 		name == "lost+found"
 }
 
+// dir indexes one folder, then its subfolders (at most 32 levels deep).
+// Only an unreadable root folder is an error.
+// dir indexe un dossier puis ses sous-dossiers (32 niveaux au plus).
+// Seul un dossier racine illisible est une erreur.
 func (w *walker) dir(dir string, depth int) error {
 	if err := w.ctx.Err(); err != nil {
 		return err
@@ -176,6 +210,7 @@ func (w *walker) dir(dir string, depth int) error {
 	var audio, images, subdirs, lists []string
 	for _, e := range ents {
 		name := e.Name()
+		// Symbolic links are skipped: they could lead outside the music folder.
 		// Liens symboliques ignorés : ils pourraient sortir du dossier musique.
 		if e.Type()&os.ModeSymlink != 0 {
 			continue
@@ -202,6 +237,7 @@ func (w *walker) dir(dir string, depth int) error {
 	folderArt := pickCover(dir, images)
 	parentArt := ArtRef{}
 	if !folderArt.Valid() && discDir.MatchString(filepath.Base(dir)) {
+		// "CD1" without a cover: use the one of the album folder.
 		// « CD1 » sans pochette : celle du dossier de l'album.
 		parentArt = coverOf(filepath.Dir(dir))
 	}
@@ -210,6 +246,10 @@ func (w *walker) dir(dir string, depth int) error {
 		if t == nil {
 			continue
 		}
+		// Priority: named cover file, embedded picture, single image in the
+		// folder, cover of the parent album folder.
+		// Priorité : pochette nommée, image intégrée, image seule du dossier,
+		// pochette du dossier parent de l'album.
 		switch {
 		case folderArt.Valid() && isNamedCover(folderArt.Path):
 			t.Art = folderArt
@@ -236,6 +276,8 @@ func (w *walker) dir(dir string, depth int) error {
 	return nil
 }
 
+// isNamedCover reports whether the file name is one of coverNames.
+// isNamedCover indique si le nom du fichier fait partie de coverNames.
 func isNamedCover(path string) bool {
 	base := strings.ToLower(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
 	for _, n := range coverNames {
@@ -246,6 +288,8 @@ func isNamedCover(path string) bool {
 	return false
 }
 
+// pickCover chooses the cover of a folder: a known name (cover, folder...),
+// otherwise the only image present.
 // pickCover choisit la pochette d'un dossier : nom connu (cover, folder…),
 // sinon la seule image présente.
 func pickCover(dir string, images []string) ArtRef {
@@ -264,7 +308,7 @@ func pickCover(dir string, images []string) ArtRef {
 	}
 	if best == "" {
 		if len(images) != 1 {
-			return ArtRef{} // plusieurs images sans nom connu : livret, on ne devine pas
+			return ArtRef{} // several unnamed images (booklet): no guessing / plusieurs images sans nom connu : livret, on ne devine pas
 		}
 		best = images[0]
 	}
@@ -275,6 +319,8 @@ func pickCover(dir string, images []string) ArtRef {
 	return ArtRef{Path: filepath.Join(dir, best), Mime: mime}
 }
 
+// coverOf returns the cover of a folder, read from disk.
+// coverOf renvoie la pochette d'un dossier, lue sur le disque.
 func coverOf(dir string) ArtRef {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
@@ -290,21 +336,22 @@ func coverOf(dir string) ArtRef {
 	return pickCover(dir, images)
 }
 
+// leadingNumber matches a track number at the start of a file name ("01 - ", "1. ").
+// leadingNumber reconnaît un numéro de piste en début de nom de fichier (« 01 - », « 1. »).
 var leadingNumber = regexp.MustCompile(`^(\d{1,3})[\s._-]*(?:-\s*)?`)
 
+// addedVersion identifies how Track.Added is computed (2 = creation date).
 // addedVersion : méthode de calcul de Track.Added (2 = date de création).
 const addedVersion = 2
 
-// added : date d'arrivée du fichier sur le NAS = date de création sur le
-// disque (btime.go). Sans elle : date de modification.
-//
-// Ancienne méthode (0.0.3), remplacée car le NAS met à jour ctime sur des
-// dossiers entiers et l'ordre « Derniers ajoutés » devenait faux :
-//
-//	t.Added = st.ModTime().Unix()
-//	if sys, ok := st.Sys().(*syscall.Stat_t); ok && sys.Ctim.Sec > t.Added {
-//		t.Added = int64(sys.Ctim.Sec)
-//	}
+// added returns when the file arrived on the NAS: its creation date on disk
+// (btime.go), otherwise its modification time, never later than the scan.
+// ctime is not used: the NAS updates it on whole folders, which would break
+// the "recently added" order.
+// added renvoie la date d'arrivée du fichier sur le NAS : date de création sur
+// le disque (btime.go), sinon date de modification, jamais après l'indexation.
+// ctime n'est pas utilisé : le NAS le met à jour sur des dossiers entiers, ce
+// qui fausserait l'ordre des derniers ajouts.
 func (w *walker) added(path string, st os.FileInfo) int64 {
 	a := fileBirth(path)
 	if a <= 0 {
@@ -316,6 +363,8 @@ func (w *walker) added(path string, st os.FileInfo) int64 {
 	return a
 }
 
+// file returns the track of a file: taken from the previous index if the file
+// has not changed, otherwise built by reading its tags.
 // file renvoie la piste d'un fichier : reprise de l'index précédent si le
 // fichier n'a pas changé, sinon lecture des étiquettes.
 func (w *walker) file(path string, depth int) *Track {
@@ -328,8 +377,10 @@ func (w *walker) file(path string, depth int) *Track {
 	mt := st.ModTime().UnixNano()
 	if p := w.prev[path]; p != nil && p.Size == st.Size() && p.ModTime == mt {
 		t := *p
-		// 0.0.4 : date d'ajout recalculée une fois pour les fichiers déjà
-		// indexés par la 0.0.3 (méthode ctime, fausse).
+		// Cached entries computed with an older method get their added date
+		// computed again, once.
+		// Les entrées du cache calculées par une méthode antérieure ont leur
+		// date d'ajout recalculée, une seule fois.
 		if t.AddedV < addedVersion {
 			t.Added, t.AddedV = w.added(path, st), addedVersion
 		}
@@ -337,6 +388,7 @@ func (w *walker) file(path string, depth int) *Track {
 	}
 	ext := strings.ToLower(filepath.Ext(path))
 	t := &Track{ID: hashKey("t", path), Path: path, Size: st.Size(), ModTime: mt, Mime: audioTypes[ext]}
+	// Added date: kept afterwards, even when the file is retagged.
 	// Date d'ajout : conservée ensuite, même si le fichier est réétiqueté.
 	if p := w.prev[path]; p != nil && p.Added > 0 && p.AddedV >= addedVersion {
 		t.Added, t.AddedV = p.Added, p.AddedV
@@ -358,6 +410,8 @@ func (w *walker) file(path string, depth int) *Track {
 		w.note(func(s *ScanStatus) { s.Errors++; s.LastError = err.Error() })
 	}
 	w.note(func(s *ScanStatus) { s.Read++ })
+	// File without tags: title and number taken from the file name, artist
+	// taken from the parent of the album folder ("Artist/Album/01 Title.flac").
 	// Fichier sans étiquettes : titre et numéro tirés du nom, artiste tiré du
 	// dossier parent de l'album (rangement « Artiste/Album/01 Titre.flac »).
 	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
@@ -378,8 +432,12 @@ func (w *walker) file(path string, depth int) *Track {
 	return t
 }
 
+// readPlaylist reads a .m3u/.m3u8 playlist (paths relative to the file or
+// absolute; web addresses are skipped). Input is limited to 2 MB and 10,000
+// entries; non-UTF-8 lines are read as Latin-1.
 // readPlaylist lit une playlist .m3u/.m3u8 (chemins relatifs au fichier ou
-// absolus ; les adresses web sont ignorées).
+// absolus ; les adresses web sont ignorées). La lecture est limitée à 2 Mo et
+// 10 000 entrées ; les lignes non UTF-8 sont lues en Latin-1.
 func readPlaylist(path string) (RawPlaylist, bool) {
 	f, err := os.Open(path)
 	if err != nil {

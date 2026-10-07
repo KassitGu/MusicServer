@@ -1,0 +1,21 @@
+######################################################################
+# Install routines of the "Musique NAS" package (QDK).
+# Routines d'installation du paquet « Musique NAS » (QDK).
+#
+# The data (settings, Last.fm account, library index) live in
+# $SYS_QPKG_DIR/data: that folder is not part of the package, so it is kept
+# on upgrade. Files of an earlier build missing from this package are
+# removed by QDK (remove_obsolete_files), not by these routines.
+# Les données (réglages, compte Last.fm, index de la bibliothèque) sont dans
+# $SYS_QPKG_DIR/data : ce dossier ne fait pas partie du paquet et est donc
+# conservé lors d'une mise à jour. Les fichiers d'une version précédente
+# absents de ce paquet sont supprimés par QDK (remove_obsolete_files), pas
+# par ces routines.
+######################################################################
+
+pkg_post_install(){
+    $CMD_CHMOD 755 ${SYS_QPKG_DIR}/musique.sh ${SYS_QPKG_DIR}/ohscrobbler
+    $CMD_CHMOD 755 ${SYS_QPKG_DIR}/tools/bin/su-exec ${SYS_QPKG_DIR}/tools/lib/ld-musl-aarch64.so.1
+    $CMD_MKDIR -p ${SYS_QPKG_DIR}/data
+    $CMD_CHMOD 755 ${SYS_QPKG_DIR}/data
+}

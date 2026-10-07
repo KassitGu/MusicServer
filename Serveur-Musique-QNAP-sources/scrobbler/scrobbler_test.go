@@ -17,19 +17,20 @@ const sampleDIDL = `<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lit
 func TestParseDIDL(t *testing.T) {
 	m := ParseDIDL(sampleDIDL)
 	if m.Title != "So What" || m.Artist != "Miles Davis" || m.Album != "Kind of Blue" || m.AlbumArtist != "Miles Davis Sextet" || m.TrackNumber != "1" {
-		t.Fatalf("métadonnées inattendues : %+v", m)
+		t.Fatalf("unexpected metadata: %+v", m)
 	}
 	m = ParseDIDL(strings.Replace(sampleDIDL, "<dc:title>So What", "<dc:title>Miles Davis - So What", 1))
 	if m.Title != "So What" {
-		t.Fatalf("préfixe artiste non retiré : %q", m.Title)
+		t.Fatalf("artist prefix not removed: %q", m.Title)
 	}
 	if got := ParseDIDL(""); got.Title != "" {
-		t.Fatal("DIDL vide")
+		t.Fatal("empty DIDL")
 	}
-	// Repli sur dc:creator si pas d'upnp:artist
+	// Falls back to dc:creator when there is no upnp:artist.
+	// Repli sur dc:creator si pas d'upnp:artist.
 	m = ParseDIDL(`<DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/"><item><dc:title>T</dc:title><dc:creator>C</dc:creator></item></DIDL-Lite>`)
 	if m.Artist != "C" {
-		t.Fatalf("repli creator : %+v", m)
+		t.Fatalf("creator fallback: %+v", m)
 	}
 }
 
@@ -42,7 +43,7 @@ func TestTrackerScrobbleRules(t *testing.T) {
 	meta := &TrackMeta{Title: "So What", Artist: "Miles Davis"}
 	t0 := time.Unix(1_000_000, 0)
 	if evs := tr.Observe(obs(t0, 1, 562, 0, meta)); len(evs) != 0 {
-		t.Fatal("pas d'événement au premier relevé")
+		t.Fatal("no event expected on the first reading")
 	}
 	var now, scrob int
 	for s := 5; s <= 300; s += 5 {
@@ -53,10 +54,10 @@ func TestTrackerScrobbleRules(t *testing.T) {
 			if e.Scrobble != nil {
 				scrob++
 				if s < 240 {
-					t.Fatalf("scrobble trop tôt à %d s", s)
+					t.Fatalf("scrobble too early at %d s", s)
 				}
 				if e.Scrobble.Timestamp != t0.Unix() {
-					t.Fatalf("horodatage %d", e.Scrobble.Timestamp)
+					t.Fatalf("timestamp %d", e.Scrobble.Timestamp)
 				}
 			}
 		}
@@ -72,16 +73,18 @@ func TestTrackerSeekAndPauseNotCounted(t *testing.T) {
 	t0 := time.Now()
 	tr.Observe(obs(t0, 7, 200, 0, meta))
 	tr.Observe(obs(t0, 7, 200, 5, nil))
-	// saut direct à 190 s : non compté
+	// Direct jump to 190 s: not counted.
+	// Saut direct à 190 s : non compté.
 	for _, e := range tr.Observe(obs(t0, 7, 200, 190, nil)) {
 		if e.Scrobble != nil {
-			t.Fatal("un seek ne doit pas déclencher de scrobble")
+			t.Fatal("a seek must not trigger a scrobble")
 		}
 	}
-	// pause : compteur figé
+	// Pause: the counter stays still.
+	// Pause : compteur figé.
 	tr.Observe(obs(t0, 7, 200, 190, nil))
 	if _, played, _, _ := tr.Current(); played != 5 {
-		t.Fatalf("temps écouté %d, attendu 5", played)
+		t.Fatalf("time played %d, expected 5", played)
 	}
 }
 
@@ -92,20 +95,22 @@ func TestTrackerFilters(t *testing.T) {
 	tr.Observe(o)
 	for s := 5; s < 300; s += 5 {
 		if evs := tr.Observe(obs(time.Now(), 1, 300, s, nil)); len(evs) > 0 {
-			t.Fatal("la source Radio ne doit pas être scrobblée")
+			t.Fatal("the Radio source must not be scrobbled")
 		}
 	}
-	// Morceau trop court (< 30 s)
+	// Track too short (< 30 s).
+	// Morceau trop court (< 30 s).
 	tr2 := &Tracker{PollPeriod: 5 * time.Second}
 	tr2.Observe(obs(time.Now(), 1, 25, 0, &TrackMeta{Title: "Court", Artist: "X"}))
 	for s := 5; s <= 25; s += 5 {
 		if evs := tr2.Observe(obs(time.Now(), 1, 25, s, nil)); len(evs) > 0 {
-			t.Fatal("morceau court scrobblé")
+			t.Fatal("short track scrobbled")
 		}
 	}
 }
 
-// Faux lecteur OpenHome : description + services Info/Time/Product.
+// fakeRenderer is a fake OpenHome player: description plus the Info/Time/Product services.
+// fakeRenderer est un faux lecteur OpenHome : description + services Info/Time/Product.
 func fakeRenderer(t *testing.T) *httptest.Server {
 	var mu sync.Mutex
 	seconds := 0
@@ -138,13 +143,13 @@ func fakeRenderer(t *testing.T) *httptest.Server {
 			soap(w, "SourceIndex", "<Value>0</Value>")
 		case strings.HasSuffix(a, `#Source"`):
 			if !strings.Contains(string(b), "<Index>0</Index>") {
-				t.Errorf("argument Index manquant : %s", b)
+				t.Errorf("Index argument missing: %s", b)
 			}
 			soap(w, "Source", "<SystemName>Playlist</SystemName><Type>Playlist</Type><Name>Playlist</Name><Visible>true</Visible>")
 		case strings.HasSuffix(a, `#Product"`):
 			soap(w, "Product", "<Room>Salon</Room><Name>Klimax DSM</Name>")
 		default:
-			http.Error(w, "action inconnue", 500)
+			http.Error(w, "unknown action", 500)
 		}
 	}
 	mux.HandleFunc("/Info/control", handler)
@@ -161,7 +166,7 @@ func TestRendererSOAP(t *testing.T) {
 		t.Fatal(err)
 	}
 	if r.UDN != "uuid:klimax" || !strings.HasSuffix(r.TimeURL, "/Time/control") {
-		t.Fatalf("renderer : %+v", r)
+		t.Fatalf("renderer: %+v", r)
 	}
 	ts, err := r.Time()
 	if err != nil || ts.TrackCount != 3 || ts.Duration != 562 || ts.Seconds != 5 {
@@ -179,7 +184,8 @@ func TestRendererSOAP(t *testing.T) {
 	}
 }
 
-// Faux Last.fm : vérifie la signature et enregistre les appels.
+// fakeLastfm is a fake Last.fm: it checks the signature and records the calls.
+// fakeLastfm est un faux Last.fm : vérifie la signature et enregistre les appels.
 func fakeLastfm(t *testing.T, secret string, calls *[]url.Values) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
@@ -198,7 +204,7 @@ func fakeLastfm(t *testing.T, secret string, calls *[]url.Values) *httptest.Serv
 		*calls = append(*calls, p)
 		switch p.Get("method") {
 		case "auth.getSession":
-			fmt.Fprint(w, `{"session":{"name":"bertrand","key":"SK123","subscriber":0}}`)
+			fmt.Fprint(w, `{"session":{"name":"testuser","key":"SK123","subscriber":0}}`)
 		case "track.scrobble":
 			if p.Get("sk") != "SK123" {
 				fmt.Fprint(w, `{"error":9,"message":"Invalid session key"}`)
@@ -219,11 +225,11 @@ func TestLastfmFlowAndQueue(t *testing.T) {
 
 	lf := &Lastfm{APIKey: "key", Secret: "secret"}
 	sk, user, err := lf.GetSession("tok123456")
-	if err != nil || sk != "SK123" || user != "bertrand" {
+	if err != nil || sk != "SK123" || user != "testuser" {
 		t.Fatalf("session %q %q %v", sk, user, err)
 	}
 	if !strings.Contains(lf.AuthURL("http://nas:8790/callback/abc"), "cb=http%3A%2F%2Fnas%3A8790%2Fcallback%2Fabc") {
-		t.Fatal("URL d'autorisation")
+		t.Fatal("authorisation URL")
 	}
 
 	store, err := OpenStore(t.TempDir())
@@ -238,20 +244,21 @@ func TestLastfmFlowAndQueue(t *testing.T) {
 	app.flush()
 	q, sent, lastErr, _ := store.Status()
 	if q != 0 || sent != 1 || lastErr != "" {
-		t.Fatalf("file q=%d sent=%d err=%q", q, sent, lastErr)
+		t.Fatalf("queue q=%d sent=%d err=%q", q, sent, lastErr)
 	}
 	last := calls[len(calls)-1]
 	if last.Get("method") != "track.scrobble" || last.Get("artist[0]") != "Miles Davis" || last.Get("artist[1]") != "" {
-		t.Fatalf("appel scrobble : %v", last)
+		t.Fatalf("scrobble call: %v", last)
 	}
 
+	// Revoked session: the queue is kept and the session key cleared.
 	// Session révoquée : la file est conservée et la session effacée.
 	store.UpdateConfig(func(c *Config) { c.SessionKey = "BAD" })
 	store.Enqueue(Scrobble{Artist: "A", Track: "B", Timestamp: now})
 	app.flush()
 	q, _, lastErr, _ = store.Status()
 	if q != 1 || store.Config().SessionKey != "" || lastErr == "" {
-		t.Fatalf("session invalide q=%d sk=%q err=%q", q, store.Config().SessionKey, lastErr)
+		t.Fatalf("invalid session q=%d sk=%q err=%q", q, store.Config().SessionKey, lastErr)
 	}
 }
 
@@ -260,40 +267,45 @@ func TestWebSecurity(t *testing.T) {
 	app := &App{store: store, actors: map[string]*actor{}, kick: make(chan struct{}, 1)}
 	h := app.httpServer(":0").Handler
 
-	// Accès depuis Internet refusé
+	// Access from the Internet is refused.
+	// Accès depuis Internet refusé.
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = "8.8.8.8:1234"
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 403 {
-		t.Fatalf("accès public : %d", rec.Code)
+		t.Fatalf("public access: %d", rec.Code)
 	}
-	// POST sans Origin refusé (CSRF)
+	// POST without Origin is refused (CSRF).
+	// POST sans Origin refusé (CSRF).
 	req = httptest.NewRequest("POST", "/disconnect", nil)
 	req.RemoteAddr = "192.168.1.20:1234"
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 403 {
-		t.Fatalf("CSRF : %d", rec.Code)
+		t.Fatalf("CSRF: %d", rec.Code)
 	}
-	// POST depuis une autre origine refusé
+	// POST from another origin is refused.
+	// POST depuis une autre origine refusé.
 	req = httptest.NewRequest("POST", "/disconnect", nil)
 	req.RemoteAddr = "192.168.1.20:1234"
 	req.Header.Set("Origin", "http://evil.example")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 403 {
-		t.Fatalf("origine tierce : %d", rec.Code)
+		t.Fatalf("third-party origin: %d", rec.Code)
 	}
-	// Callback sans state valide refusé
+	// Callback without a valid state is refused.
+	// Callback sans state valide refusé.
 	req = httptest.NewRequest("GET", "/callback/forged?token=abcdefgh12", nil)
 	req.RemoteAddr = "192.168.1.20:1234"
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "expir") {
-		t.Fatalf("callback forgé : %d %s", rec.Code, loc)
+		t.Fatalf("forged callback: %d %s", rec.Code, loc)
 	}
-	// Page d'accueil : contenu échappé, secret jamais affiché
+	// Home page: content escaped, secret never shown.
+	// Page d'accueil : contenu échappé, secret jamais affiché.
 	store.UpdateConfig(func(c *Config) {
 		c.APIKey = "0123456789abcdef0123456789abcdef"
 		c.APISecret = "fedcba9876543210fedcba9876543210"
@@ -304,11 +316,13 @@ func TestWebSecurity(t *testing.T) {
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	body := rec.Body.String()
-	// 0.0.3 : plus de lien vers l'interface de Gerbera (retiré du paquet).
-	if rec.Code != 200 || strings.Contains(body, "<script>") || strings.Contains(body, "fedcba9876543210") || strings.Contains(body, "Gerbera") {
-		t.Fatalf("page : %d", rec.Code)
+	// No script and no secret in the page.
+	// Ni script ni secret dans la page.
+	if rec.Code != 200 || strings.Contains(body, "<script>") || strings.Contains(body, "fedcba9876543210") {
+		t.Fatalf("page: %d", rec.Code)
 	}
-	// Enregistrement valide avec la bonne origine
+	// Valid save with the right origin.
+	// Enregistrement valide avec la bonne origine.
 	form := url.Values{"api_key": {"0123456789abcdef0123456789abcdef"}, "enabled": {"on"}}
 	req = httptest.NewRequest("POST", "/config", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -318,7 +332,7 @@ func TestWebSecurity(t *testing.T) {
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusSeeOther || store.Config().APISecret != "fedcba9876543210fedcba9876543210" {
-		t.Fatalf("config : %d %+v", rec.Code, store.Config())
+		t.Fatalf("config: %d %+v", rec.Code, store.Config())
 	}
 }
 
@@ -338,6 +352,7 @@ func TestEndToEndPoll(t *testing.T) {
 		t.Fatal(err)
 	}
 	ac := &actor{r: r, tracker: &Tracker{Player: "Salon", PollPeriod: 5 * time.Second, AllowedSources: map[string]bool{"Playlist": true}}}
+	// The fake player moves on by 5 s at each call: 60 readings = 300 s.
 	// Le faux lecteur avance de 5 s à chaque appel : 60 relevés = 300 s.
 	for i := 0; i < 60; i++ {
 		if err := app.pollOnce(ac); err != nil {
@@ -351,6 +366,6 @@ func TestEndToEndPoll(t *testing.T) {
 	}
 	joined := strings.Join(methods, ",")
 	if !strings.Contains(joined, "track.updateNowPlaying") || strings.Count(joined, "track.scrobble") != 1 {
-		t.Fatalf("appels : %s", joined)
+		t.Fatalf("calls: %s", joined)
 	}
 }

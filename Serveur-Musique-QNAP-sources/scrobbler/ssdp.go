@@ -1,5 +1,8 @@
 package main
 
+// SSDP announcement of the "Musique NAS" server: replies to player searches
+// (M-SEARCH) and periodic announcements (NOTIFY alive / byebye), on the one
+// network interface that leads to the players.
 // Annonce SSDP du serveur « Musique NAS » : réponses aux recherches
 // (M-SEARCH) des lecteurs et annonces périodiques (NOTIFY alive / byebye),
 // sur la seule carte réseau qui mène aux lecteurs.
@@ -19,18 +22,21 @@ import (
 	"time"
 )
 
-const ssdpMaxAge = 1800
+const ssdpMaxAge = 1800 // seconds / secondes
 
+// SSDPAnnouncer advertises the media server on the local network.
+// SSDPAnnouncer annonce le serveur de médias sur le réseau local.
 type SSDPAnnouncer struct {
 	UDN, Version string
 	Port         int
-	IfaceName    string // vide : carte de la route par défaut
+	IfaceName    string // empty: default route interface / vide : carte de la route par défaut
 
 	mu    sync.Mutex
-	where string // carte et adresse annoncées (affichées sur la page 8790)
+	where string // announced interface and address (shown on the settings page) / carte et adresse annoncées (affichées sur la page de réglages)
 }
 
-// Where : « eth1 (192.168.68.54:49494) », ou la raison de l'absence d'annonce.
+// Where returns "eth1 (192.168.68.54:49494)", or the reason why nothing is announced.
+// Where renvoie « eth1 (192.168.68.54:49494) », ou la raison de l'absence d'annonce.
 func (s *SSDPAnnouncer) Where() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -43,6 +49,7 @@ func (s *SSDPAnnouncer) setWhere(v string) {
 	s.mu.Unlock()
 }
 
+// defaultRouteIface reads /proc/net/route (same rule as musique.sh).
 // defaultRouteIface lit /proc/net/route (même règle que musique.sh).
 func defaultRouteIface() string {
 	f, err := os.Open("/proc/net/route")
@@ -61,6 +68,8 @@ func defaultRouteIface() string {
 	return ""
 }
 
+// pickIface chooses the interface: the given name, otherwise the default
+// route, otherwise the first active interface with an IPv4 address.
 // pickIface choisit la carte : nom donné, sinon route par défaut, sinon la
 // première carte active avec une adresse IPv4.
 func pickIface(name string) (*net.Interface, net.IP, error) {
@@ -85,7 +94,7 @@ func pickIface(name string) (*net.Interface, net.IP, error) {
 			return ifc, ip, nil
 		}
 	}
-	return nil, nil, fmt.Errorf("aucune carte réseau utilisable")
+	return nil, nil, fmt.Errorf("no usable network interface")
 }
 
 func (s *SSDPAnnouncer) types() []string {
@@ -103,7 +112,10 @@ func (s *SSDPAnnouncer) server() string {
 	return "Linux/5 UPnP/1.0 MusiqueNAS/" + s.Version
 }
 
-// setMulticastIf force la carte de sortie des annonces multicast.
+// setMulticastIf forces the outgoing interface of multicast announcements
+// (TTL 2: the announcements stay on the local network).
+// setMulticastIf force la carte de sortie des annonces multicast
+// (TTL 2 : les annonces restent sur le réseau local).
 func setMulticastIf(c *net.UDPConn, ip net.IP) {
 	rc, err := c.SyscallConn()
 	if err != nil {
@@ -117,17 +129,18 @@ func setMulticastIf(c *net.UDPConn, ip net.IP) {
 	})
 }
 
+// Run announces the server until the context is cancelled.
 // Run annonce le serveur jusqu'à l'annulation du contexte.
 func (s *SSDPAnnouncer) Run(ctx context.Context) {
 	for ctx.Err() == nil {
 		ifc, ip, err := pickIface(s.IfaceName)
 		if err != nil {
-			logf("SSDP : %v", err)
+			logf("SSDP: %v", err)
 			s.setWhere("aucune annonce : " + err.Error())
 			sleepCtx(ctx, 30*time.Second)
 			continue
 		}
-		logf("SSDP : annonce sur %s (%s:%d)", ifc.Name, ip, s.Port)
+		logf("SSDP: announcing on %s (%s:%d)", ifc.Name, ip, s.Port)
 		s.setWhere(fmt.Sprintf("%s (%s:%d)", ifc.Name, ip, s.Port))
 		s.runOn(ctx, ifc, ip)
 	}
@@ -140,21 +153,31 @@ func sleepCtx(ctx context.Context, d time.Duration) {
 	}
 }
 
+// runOn announces on one interface until the context is cancelled or the
+// interface address changes.
+// runOn annonce sur une carte jusqu'à l'annulation du contexte ou jusqu'au
+// changement d'adresse de la carte.
 func (s *SSDPAnnouncer) runOn(ctx context.Context, ifc *net.Interface, ip net.IP) {
 	group := &net.UDPAddr{IP: net.IPv4(239, 255, 255, 250), Port: 1900}
 	lc, err := net.ListenMulticastUDP("udp4", ifc, group)
 	if err != nil {
+		// Fallback: join the group without forcing the interface (the kernel
+		// picks the one on the route to the group). Some environments refuse
+		// the option that sets the receiving interface.
 		// Repli : abonnement au groupe sans imposer la carte (le noyau
 		// choisit celle de la route vers le groupe). Certains environnements
 		// refusent l'option qui fixe la carte de réception.
-		logf("SSDP : écoute sur %s impossible (%v), essai sans carte imposée", ifc.Name, err)
+		logf("SSDP: cannot listen on %s (%v), trying without a fixed interface", ifc.Name, err)
 		lc, err = net.ListenMulticastUDP("udp4", nil, group)
 	}
 	if err != nil {
+		// Without listening, player searches get no reply, but the periodic
+		// announcements are enough for the control app to see the server:
+		// carry on in "announcements only" mode.
 		// Sans écoute, on ne répond pas aux recherches des lecteurs, mais
-		// les annonces périodiques suffisent à l'application de contrôle pour voir le
-		// serveur : on continue en mode « annonces seules ».
-		logf("SSDP : écoute impossible (%v) : annonces seules", err)
+		// les annonces périodiques suffisent à l'application de contrôle pour
+		// voir le serveur : on continue en mode « annonces seules ».
+		logf("SSDP: cannot listen (%v): announcements only", err)
 		s.setWhere(fmt.Sprintf("%s (%s:%d), annonces seules : %v", ifc.Name, ip, s.Port, err))
 		lc = nil
 	}
@@ -163,7 +186,7 @@ func (s *SSDPAnnouncer) runOn(ctx context.Context, ifc *net.Interface, ip net.IP
 		if lc != nil {
 			lc.Close()
 		}
-		logf("SSDP : envoi impossible : %v", err)
+		logf("SSDP: cannot send: %v", err)
 		s.setWhere("aucune annonce : " + err.Error())
 		sleepCtx(ctx, 30*time.Second)
 		return
@@ -194,6 +217,8 @@ func (s *SSDPAnnouncer) runOn(ctx context.Context, ifc *net.Interface, ip net.IP
 		}
 	}
 
+	// Announcements: 3 times at start-up (UDP may lose packets), then every
+	// 5 minutes; the address is also checked for changes.
 	// Annonces : 3 fois au démarrage (UDP peut perdre des paquets), puis
 	// toutes les 5 minutes ; on vérifie aussi que l'adresse n'a pas changé.
 	go func() {
@@ -209,7 +234,7 @@ func (s *SSDPAnnouncer) runOn(ctx context.Context, ifc *net.Interface, ip net.IP
 				return
 			case <-t.C:
 				if _, nip, err := pickIface(s.IfaceName); err != nil || !nip.Equal(ip) {
-					logf("SSDP : adresse changée, nouvelle annonce")
+					logf("SSDP: address changed, announcing again")
 					cancel()
 					return
 				}
@@ -219,6 +244,7 @@ func (s *SSDPAnnouncer) runOn(ctx context.Context, ifc *net.Interface, ip net.IP
 	}()
 
 	if lc == nil {
+		// Try listening again in 5 minutes.
 		// Nouvel essai d'écoute dans 5 minutes.
 		select {
 		case <-sctx.Done():
@@ -250,6 +276,11 @@ func (s *SSDPAnnouncer) runOn(ctx context.Context, ifc *net.Interface, ip net.IP
 		if len(sts) == 0 {
 			continue
 		}
+		// Reply after a random delay of up to half of MX (MX limited to 1-3 s),
+		// within the window SSDP allows, so that devices do not all answer at once.
+		// Réponse après un délai aléatoire d'au plus la moitié de MX (MX limité
+		// à 1-3 s), dans la fenêtre permise par SSDP, pour que les appareils ne
+		// répondent pas tous ensemble.
 		mx, _ := strconv.Atoi(req.Header.Get("MX"))
 		if mx < 1 {
 			mx = 1
