@@ -1,0 +1,16 @@
+######################################################################
+# Routines d'installation du paquet « Serveur Musique » (QDK).
+# Les données (réglages, compte Last.fm, index de la bibliothèque) sont
+# dans $SYS_QPKG_DIR/data : ce dossier ne fait pas partie du paquet et est
+# donc conservé lors d'une mise à jour.
+# 0.0.3 : Gerbera retiré ; les fichiers des versions précédentes absents de
+# ce paquet (dossiers gerbera/ et conf/) sont supprimés par QDK
+# (remove_obsolete_files), pas par ces routines.
+######################################################################
+
+pkg_post_install(){
+    $CMD_CHMOD 755 ${SYS_QPKG_DIR}/musique.sh ${SYS_QPKG_DIR}/ohscrobbler
+    $CMD_CHMOD 755 ${SYS_QPKG_DIR}/outils/bin/su-exec ${SYS_QPKG_DIR}/outils/lib/ld-musl-aarch64.so.1
+    $CMD_MKDIR -p ${SYS_QPKG_DIR}/data
+    $CMD_CHMOD 755 ${SYS_QPKG_DIR}/data
+}

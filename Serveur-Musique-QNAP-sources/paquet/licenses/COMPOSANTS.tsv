@@ -1,0 +1,6 @@
+paquet	version	licence	site	fichiers
+ohscrobbler (programme du paquet)	0.0.6	MIT	(écrit pour ce paquet, sources fournies à Bertrand)	ohscrobbler
+logos des badges (intégrés à ohscrobbler)	-	marques de leurs propriétaires, usage personnel	fournis par Bertrand (MP3 : seeklogo.com ; CD Audio : Wikimedia Commons ; Hi-Res Audio : Japan Audio Society)	scrobbler/badges/*.png (sources)
+police Inter Bold (lettres de la résolution des badges, pré-rendues)	4.0	OFL-1.1 (OFL-1.1-Inter.txt)	https://github.com/rsms/inter	scrobbler/badges/police.png (sources)
+musl	1.2.6-r2	MIT	https://musl.libc.org/	outils/lib/ld-musl-aarch64.so.1
+su-exec	0.3-r0	MIT	https://github.com/ncopa/su-exec	outils/bin/su-exec
