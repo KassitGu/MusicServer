@@ -1,0 +1,22 @@
+#!/bin/sh
+# Debian package: "remove" keeps the data (/var/lib/musique-nas); "purge"
+# also deletes the data, the service account and the inotify setting.
+# Paquet Debian : « remove » garde les données (/var/lib/musique-nas) ;
+# « purge » supprime aussi les données, le compte du service et le réglage
+# inotify.
+set -e
+
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload || true
+fi
+if [ "$1" = "purge" ]; then
+    rm -rf /var/lib/musique-nas
+    rm -f /etc/sysctl.d/60-musique-nas-inotify.conf
+    if getent passwd musique-nas >/dev/null; then
+        deluser --system musique-nas >/dev/null 2>&1 || userdel musique-nas || true
+    fi
+    if getent group musique-nas >/dev/null; then
+        delgroup --system musique-nas >/dev/null 2>&1 || groupdel musique-nas || true
+    fi
+fi
+exit 0

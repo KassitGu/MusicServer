@@ -1,15 +1,16 @@
 # Musique NAS
 
-A lightweight music server for NAS devices, designed for OpenHome / UPnP network players
+A lightweight music server for NAS devices, Raspberry Pi boards and Linux computers, designed for OpenHome / UPnP network players
 (Linn DS and compatible). It indexes a local FLAC/MP3 library, serves it over UPnP with
 reliable cover art and quality badges, and scrobbles what is played to Last.fm.
 
-One Go program (standard library only) is shared by two native packages:
+One Go program (standard library only) is shared by three editions:
 
 | Edition | Target | Package | Sources |
 |---|---|---|---|
 | QNAP | ARM 64-bit, QTS 5.x (e.g. TS-432X) | `.qpkg` | [`Serveur-Musique-QNAP-sources`](Serveur-Musique-QNAP-sources) |
 | Synology | x86_64, DSM 7.0 or later (e.g. DS220+) | `.spk` | [`Serveur-Musique-Synology-sources`](Serveur-Musique-Synology-sources) |
+| Linux / Raspberry Pi | arm64 (Raspberry Pi 4 and 5) and amd64, systemd | `.deb`, `.tar.gz` | [`Serveur-Musique-Linux-sources`](Serveur-Musique-Linux-sources) |
 
 ## Features
 
@@ -26,7 +27,7 @@ One Go program (standard library only) is shared by two native packages:
 
 ## Installation
 
-Both packages are unsigned and installed manually.
+The NAS packages are unsigned and installed manually.
 
 ### QNAP (QTS 5.x)
 
@@ -41,12 +42,19 @@ Both packages are unsigned and installed manually.
    give **MusiqueServeur** read access.
 3. Open `http://<nas-address>:8790` and choose the music folder.
 
+### Linux / Raspberry Pi (64-bit)
+
+1. Raspberry Pi OS, Debian, Ubuntu: `sudo apt install ./install/musique-nas_<version>_arm64.deb` (or `_amd64.deb` on a PC).
+   Other distributions: unpack `install/musique-nas_<version>_linux-<arch>.tar.gz` and run `sudo ./install.sh`.
+2. Make the music folder readable by the **musique-nas** account (a disk mounted under `/mnt` is the simplest).
+3. Open `http://<address>:8790` and choose the music folder.
+
 Details for each system: see the README of each sources folder.
 
 ## Last.fm
 
 Create an API account at <https://www.last.fm/api/account/create>, then paste the API key and
-shared secret on the settings page and authorise the account. Credentials are stored on the NAS only.
+shared secret on the settings page and authorise the account. Credentials are stored on the server only.
 
 ## Network ports
 
@@ -64,6 +72,7 @@ Requirements: Go, Python 3, `tar`, a POSIX shell. Each edition builds in one com
 ```sh
 cd Serveur-Musique-QNAP-sources && ./build.sh      # version: package/control/qpkg.cfg (QPKG_VER)
 cd Serveur-Musique-Synology-sources && ./build.sh  # version: package/INFO (version)
+cd Serveur-Musique-Linux-sources && ./build.sh     # version: package/debian/control (Version)
 ```
 
 The build runs `go vet` and the tests, cross-compiles a static binary and writes the package to `dist/`.
@@ -72,15 +81,16 @@ Ready-to-install packages for the current version are in [`install/`](install).
 ## Repository layout
 
 ```
-install/                           Ready-to-install packages (.qpkg, .spk)
+install/                           Ready-to-install packages (.qpkg, .spk, .deb, .tar.gz)
 Serveur-Musique-QNAP-sources/      QNAP edition: build.sh, package/ (control, scripts, icons, licences), scrobbler/ (Go)
 Serveur-Musique-Synology-sources/  Synology edition: build.sh, package/ (INFO, scripts, conf, icons, licences), scrobbler/ (Go)
+Serveur-Musique-Linux-sources/     Linux / Raspberry Pi edition: build.sh, package/ (systemd unit, debian, install.sh, licences), scrobbler/ (Go)
 ```
 
-The `scrobbler/` Go code is identical in both editions.
+The `scrobbler/` Go code is identical in every edition.
 
 ## Licence
 
 MIT, see `package/licenses/MIT.txt`. Third-party components (Inter font, OFL 1.1) are listed in
-`package/licenses/COMPONENTS.tsv`. Linn, QNAP, Synology and Last.fm are trademarks of their owners;
+`package/licenses/COMPONENTS.tsv`. Linn, QNAP, Synology, Raspberry Pi and Last.fm are trademarks of their owners;
 this project is not affiliated with them.

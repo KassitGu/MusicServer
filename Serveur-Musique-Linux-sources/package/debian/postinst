@@ -1,0 +1,25 @@
+#!/bin/sh
+# Debian package: creates the service account, raises the inotify limit when
+# needed, then enables and (re)starts the service.
+# Paquet Debian : crée le compte du service, relève la limite inotify si
+# besoin, puis active et (re)lance le service.
+set -e
+
+if [ "$1" = "configure" ]; then
+    if ! getent passwd musique-nas >/dev/null; then
+        adduser --system --group --home /var/lib/musique-nas --no-create-home \
+            --gecos "Musique NAS music server" musique-nas >/dev/null
+    fi
+    w=$(cat /proc/sys/fs/inotify/max_user_watches 2>/dev/null || echo 0)
+    if [ "$w" -lt 262144 ]; then
+        cp /usr/share/musique-nas/60-musique-nas-inotify.conf /etc/sysctl.d/
+        sysctl -q -w fs.inotify.max_user_watches=262144 || true
+    fi
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload
+        systemctl enable musique-nas.service >/dev/null 2>&1 || true
+        systemctl restart musique-nas.service || true
+    fi
+    echo "Musique NAS: settings page on http://$(hostname -I 2>/dev/null | cut -d' ' -f1):8790/"
+fi
+exit 0
