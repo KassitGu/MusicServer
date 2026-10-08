@@ -1,12 +1,20 @@
 package main
 
+// ohscrobbler: a Last.fm scrobbler for OpenHome players (DS/DSM…).
+// It polls the players on the network at regular intervals and sends to
+// Last.fm what they actually play. A local web page is used for settings.
+//
+// With the -music-dir option it is also the "Musique NAS" music server seen
+// by the control app: library indexing, personalised home, serving of
+// audio files and cover art.
+//
 // ohscrobbler : scrobbler Last.fm pour lecteurs OpenHome (DS/DSM…).
 // Il interroge périodiquement les lecteurs du réseau et envoie à Last.fm ce
 // qu'ils jouent réellement. Une page web locale sert à la configuration.
 //
-// Depuis 0.0.3, c'est aussi le serveur de musique « Musique NAS » vu par
-// l'application de contrôle (option -music-dir) : indexation de la bibliothèque, accueil
-// personnalisé, envoi des fichiers et des pochettes. Il remplace Gerbera.
+// Avec l'option -music-dir, c'est aussi le serveur de musique « Musique NAS »
+// vu par l'application de contrôle : indexation de la bibliothèque, accueil
+// personnalisé, envoi des fichiers et des pochettes.
 
 import (
 	"context"
@@ -31,17 +39,22 @@ import (
 	"time"
 )
 
+// version is set at build time (-ldflags "-X main.version=...").
+// version est fixée à la compilation (-ldflags "-X main.version=...").
 var version = "dev"
 
+// App holds the scrobbler state and, when enabled, the music server.
+// App regroupe l'état du scrobbler et, s'il est activé, le serveur de musique.
 type App struct {
 	store     *Store
 	mu        sync.Mutex
-	actors    map[string]*actor // clé : UDN
+	actors    map[string]*actor // key: UDN / clé : UDN
 	kick      chan struct{}
 	authState string
 	diag      *Diag
 
-	// Serveur de musique (0.0.3) ; nil si -music-dir n'est pas donné.
+	// Music server; nil when -music-dir is not given.
+	// Serveur de musique ; nil si -music-dir n'est pas donné.
 	lib      *LibraryService
 	scanner  *Scanner
 	top      *TopLists
@@ -49,12 +62,15 @@ type App struct {
 	ms       *MediaServer
 	ssdp     *SSDPAnnouncer
 	upnpPort int
-	// 0.0.4 : interface en rangées de l'application de contrôle, biographies Last.fm.
+	// Rows interface of the control app and Last.fm biographies.
+	// Interface en rangées de l'application de contrôle, biographies Last.fm.
 	me     *MediaEndpoint
 	events *EventServer
 	info   *ArtistInfo
 }
 
+// actor follows one player: its tracker and its polling goroutine.
+// actor suit un lecteur : son tracker et sa goroutine d'interrogation.
 type actor struct {
 	r       *Renderer
 	tracker *Tracker
@@ -64,20 +80,18 @@ type actor struct {
 }
 
 func main() {
-	dataDir := flag.String("data", "./data", "dossier de configuration et de file d'attente")
-	listen := flag.String("listen", ":8790", "adresse de la page de configuration")
-	// Ancien réglage (0.0.2), retiré avec Gerbera :
-	// gport := flag.String("gerbera-port", "49494", "port de l'interface Gerbera (lien sur la page)")
-	musicDir := flag.String("music-dir", "", "dossier de la musique (vide : pas de serveur de musique)")
-	upnpPort := flag.Int("upnp-port", 49494, "port du serveur de musique UPnP")
-	iface := flag.String("iface", "", "carte réseau des annonces (vide : celle de la route par défaut)")
-	name := flag.String("name", "Musique NAS", "nom du serveur dans l'application de contrôle")
-	udn := flag.String("udn", "", "identifiant UPnP du serveur (uuid:…) ; vide : généré et conservé")
-	cacheDir := flag.String("cache", "", "dossier du cache (index, pochettes, photos) ; défaut : <data>/cache")
-	logDir := flag.String("logdir", "", "dossier des journaux du paquet (état affiché sur la page)")
-	stateDir := flag.String("statedir", "", "dossier d'état du superviseur")
-	shares := flag.String("shares", "/share", "racine des dossiers partagés")
-	showVersion := flag.Bool("version", false, "affiche la version")
+	dataDir := flag.String("data", "./data", "settings and queue folder")
+	listen := flag.String("listen", ":8790", "settings page address")
+	musicDir := flag.String("music-dir", "", "music folder (empty: no music server)")
+	upnpPort := flag.Int("upnp-port", 49494, "UPnP music server port")
+	iface := flag.String("iface", "", "network interface for announcements (empty: the one of the default route)")
+	name := flag.String("name", "Musique NAS", "server name in the control app")
+	udn := flag.String("udn", "", "UPnP identifier of the server (uuid:…); empty: generated and kept")
+	cacheDir := flag.String("cache", "", "cache folder (index, covers, photos); default: <data>/cache")
+	logDir := flag.String("logdir", "", "package log folder (status shown on the page)")
+	stateDir := flag.String("statedir", "", "supervisor state folder")
+	shares := flag.String("shares", "/share", "root of the shared folders")
+	showVersion := flag.Bool("version", false, "print the version")
 	flag.Parse()
 	if *showVersion {
 		println("ohscrobbler", version)
@@ -85,7 +99,7 @@ func main() {
 	}
 	store, err := OpenStore(*dataDir)
 	if err != nil {
-		log.Fatalf("données : %v", err)
+		log.Fatalf("data: %v", err)
 	}
 	app := &App{store: store, actors: map[string]*actor{}, kick: make(chan struct{}, 1),
 		diag: &Diag{LogDir: *logDir, StateDir: *stateDir, Shares: *shares}}
@@ -100,12 +114,14 @@ func main() {
 			cache = filepath.Join(*dataDir, "cache")
 		}
 		if err := os.MkdirAll(cache, 0o700); err != nil {
-			log.Fatalf("cache : %v", err)
+			log.Fatalf("cache: %v", err)
 		}
 		id, err := serverUDN(*udn, *dataDir)
 		if err != nil {
-			log.Fatalf("identifiant UPnP : %v", err)
+			log.Fatalf("UPnP identifier: %v", err)
 		}
+		// More frequent garbage collection: the NAS has little memory and
+		// the index of a large library is kept in memory.
 		// Ramasse-miettes plus fréquent : le NAS a peu de mémoire et l'index
 		// d'une grande bibliothèque est gardé en mémoire.
 		debug.SetGCPercent(50)
@@ -113,15 +129,26 @@ func main() {
 		app.top = NewTopLists(store, *dataDir)
 		app.photos = NewPhotos(filepath.Join(cache, "photos"), store)
 		app.scanner = NewScanner(*musicDir, filepath.Join(cache, "index.json"))
-		app.lib = NewLibraryService(store, app.scanner, newArtCache(filepath.Join(cache, "pochettes")), app.top, app.photos)
-		app.info = NewArtistInfo(filepath.Join(cache, "artistes"), store)
+		// Cache folders had French names in earlier builds: they are renamed
+		// rather than rebuilt (covers take a long time to draw again).
+		// Les dossiers du cache avaient des noms français dans les versions
+		// précédentes : ils sont renommés plutôt que reconstruits (les
+		// pochettes sont longues à redessiner).
+		renameLegacy(filepath.Join(cache, "pochettes"), filepath.Join(cache, "covers"))
+		renameLegacy(filepath.Join(cache, "artistes"), filepath.Join(cache, "artists"))
+		app.lib = NewLibraryService(store, app.scanner, newArtCache(filepath.Join(cache, "covers")), app.top, app.photos)
+		app.info = NewArtistInfo(filepath.Join(cache, "artists"), store)
 		app.lib.info = app.info
+		app.lib.upl = NewUserPlaylists(*dataDir)
 		app.ms = NewMediaServer(*name, id, version, app.lib)
-		// 0.0.4 : serveur d'événements et interface Kazoo. Sans serveur
-		// d'événements, l'appli n'afficherait pas la bibliothèque : on
-		// reste alors en UPnP simple.
+		// Event server and rows interface. Without the event server the
+		// control app would not show the library, so the server then stays
+		// in plain UPnP.
+		// Serveur d'événements et interface en rangées. Sans serveur
+		// d'événements, l'application de contrôle n'afficherait pas la
+		// bibliothèque : on reste alors en UPnP simple.
 		if es, err := NewEventServer(*upnpPort + 1); err != nil {
-			log.Printf("serveur d'événements indisponible, interface en rangées désactivée : %v", err)
+			log.Printf("event server unavailable, rows interface disabled: %v", err)
 		} else {
 			app.events = es
 			app.me = NewMediaEndpoint(app.ms, app.lib, es)
@@ -141,10 +168,12 @@ func main() {
 		app.ms.Routes(mux)
 		usrv = &http.Server{Addr: fmt.Sprintf(":%d", *upnpPort), Handler: lanOnly(mux), ReadHeaderTimeout: 10 * time.Second}
 		go func() {
+			// Port in use: exit, the cause appears in the log and the
+			// supervisor restarts the program.
 			// Port occupé : arrêt, la cause apparaît dans le journal et le
 			// superviseur relance le programme.
 			if err := usrv.ListenAndServe(); err != nil && !errors.Is(err, httpErrServerClosed) {
-				log.Fatalf("serveur de musique : %v", err)
+				log.Fatalf("music server: %v", err)
 			}
 		}()
 		go app.lib.Run(ctx)
@@ -156,14 +185,15 @@ func main() {
 			app.ssdp.Run(ctx)
 			close(ssdpDone)
 		}()
-		log.Printf("serveur de musique « %s » (%s) : dossier %s, port %d", *name, id, *musicDir, *upnpPort)
+		log.Printf("music server \"%s\" (%s): folder %s, port %d", *name, id, *musicDir, *upnpPort)
 	} else {
 		close(ssdpDone)
 	}
 
 	go app.discoveryLoop(ctx)
 	go app.flushLoop(ctx)
-	// 0.0.4 : mesure de la charge processeur pour la page :8790.
+	// CPU load sampling for the settings page (:8790).
+	// Mesure de la charge processeur pour la page de réglages (:8790).
 	go func() {
 		t := time.NewTicker(30 * time.Second)
 		defer t.Stop()
@@ -179,10 +209,10 @@ func main() {
 	srv := app.httpServer(*listen)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, httpErrServerClosed) {
-			log.Fatalf("serveur web : %v", err)
+			log.Fatalf("web server: %v", err)
 		}
 	}()
-	log.Printf("ohscrobbler %s démarré, page de configuration sur %s", version, *listen)
+	log.Printf("ohscrobbler %s started, settings page on %s", version, *listen)
 	<-ctx.Done()
 	shutdown, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -190,23 +220,30 @@ func main() {
 	if usrv != nil {
 		_ = usrv.Shutdown(shutdown)
 	}
-	// Laisse partir l'annonce « byebye » : l'application de contrôle retire le serveur
-	// tout de suite au lieu d'attendre l'expiration.
+	// Let the SSDP "byebye" announcement go out: the control app then removes
+	// the server at once instead of waiting for it to expire.
+	// Laisse partir l'annonce SSDP « byebye » : l'application de contrôle
+	// retire le serveur tout de suite au lieu d'attendre l'expiration.
 	select {
 	case <-ssdpDone:
 	case <-shutdown.Done():
 	}
-	log.Printf("arrêt")
+	log.Printf("stopped")
 }
 
+// udnRe accepts a UPnP device identifier ("uuid:" followed by hex digits and dashes).
+// udnRe accepte un identifiant d'appareil UPnP (« uuid: » suivi de chiffres hexadécimaux et de tirets).
 var udnRe = regexp.MustCompile(`^uuid:[0-9a-fA-F-]{8,64}$`)
 
-// serverUDN : identifiant donné par le superviseur, sinon celui conservé
-// dans le dossier de données (créé au premier démarrage).
+// serverUDN returns the identifier given by the supervisor, otherwise the one
+// kept in the data folder (a random version 4 UUID created on first start).
+// serverUDN renvoie l'identifiant donné par le superviseur, sinon celui
+// conservé dans le dossier de données (UUID version 4 aléatoire créé au
+// premier démarrage).
 func serverUDN(given, dataDir string) (string, error) {
 	if given != "" {
 		if !udnRe.MatchString(given) {
-			return "", fmt.Errorf("identifiant invalide : %q", given)
+			return "", fmt.Errorf("invalid identifier: %q", given)
 		}
 		return given, nil
 	}
@@ -220,25 +257,29 @@ func serverUDN(given, dataDir string) (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	b[6] = b[6]&0x0f | 0x40
-	b[8] = b[8]&0x3f | 0x80
+	b[6] = b[6]&0x0f | 0x40 // version 4
+	b[8] = b[8]&0x3f | 0x80 // RFC 4122 variant / variante RFC 4122
 	h := hex.EncodeToString(b)
 	v := "uuid:" + h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
 	return v, os.WriteFile(p, []byte(v+"\n"), 0o600)
 }
 
+// discoveryLoop looks for players (SSDP plus the manually entered
+// addresses) every five minutes and starts following the new ones.
+// discoveryLoop cherche les lecteurs (SSDP et adresses saisies à la main)
+// toutes les cinq minutes et commence à suivre les nouveaux.
 func (a *App) discoveryLoop(ctx context.Context) {
 	for {
 		cfg := a.store.Config()
 		locs, err := DiscoverRenderers(ctx, 4*time.Second)
 		if err != nil {
-			log.Printf("découverte SSDP : %v", err)
+			log.Printf("SSDP discovery: %v", err)
 		}
 		locs = append(locs, cfg.ManualDevices...)
 		for _, loc := range locs {
 			r, err := LoadRenderer(loc)
 			if err != nil {
-				log.Printf("lecteur %s ignoré : %v", loc, err)
+				log.Printf("player %s skipped: %v", loc, err)
 				continue
 			}
 			a.addRenderer(ctx, r)
@@ -251,6 +292,11 @@ func (a *App) discoveryLoop(ctx context.Context) {
 	}
 }
 
+// addRenderer starts following a player unless it is already followed or
+// ignored in the settings. The room name, when known, names the player.
+// addRenderer commence à suivre un lecteur, sauf s'il l'est déjà ou s'il
+// est ignoré dans les réglages. Le nom de la pièce, s'il est connu, sert de
+// nom au lecteur.
 func (a *App) addRenderer(ctx context.Context, r *Renderer) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -278,7 +324,7 @@ func (a *App) addRenderer(ctx context.Context, r *Renderer) {
 		ac.tracker.Player = room
 	}
 	a.actors[r.UDN] = ac
-	log.Printf("lecteur suivi : %s (%s)", ac.tracker.Player, r.Location)
+	log.Printf("player followed: %s (%s)", ac.tracker.Player, r.Location)
 	go a.pollLoop(actx, ac)
 }
 
@@ -302,10 +348,12 @@ func (a *App) pollLoop(ctx context.Context, ac *actor) {
 			a.mu.Lock()
 			ac.lastErr = err.Error()
 			a.mu.Unlock()
+			// Player switched off or unreachable: forget it, discovery
+			// will find it again when it comes back.
 			// Lecteur éteint ou injoignable : on l'oublie, la découverte le
 			// retrouvera quand il reviendra.
 			if failures >= 12 {
-				log.Printf("lecteur %s injoignable, suivi arrêté : %v", ac.tracker.Player, err)
+				log.Printf("player %s unreachable, no longer followed: %v", ac.tracker.Player, err)
 				a.removeActor(ac.r.UDN)
 				return
 			}
@@ -320,6 +368,11 @@ func (a *App) pollLoop(ctx context.Context, ac *actor) {
 	}
 }
 
+// pollOnce reads the player's position, and the track metadata only when
+// the tracker needs it, then sends the resulting events to Last.fm.
+// pollOnce lit la position du lecteur, et les métadonnées du morceau
+// seulement quand le tracker en a besoin, puis envoie à Last.fm les
+// événements qui en résultent.
 func (a *App) pollOnce(ac *actor) error {
 	ts, err := ac.r.Time()
 	if err != nil {
@@ -342,14 +395,18 @@ func (a *App) pollOnce(ac *actor) error {
 	evs := ac.tracker.Observe(obs)
 	ac.lastErr = ""
 	a.mu.Unlock()
-	// 0.0.3 : chaque écoute alimente aussi le classement local (« Les plus
+	// Every play also feeds the local ranking ("Most played" without
+	// Last.fm), even when scrobbling is disabled.
+	// Chaque écoute alimente aussi le classement local (« Les plus
 	// écoutés » sans Last.fm), même si le scrobbling est désactivé.
 	if a.top != nil {
 		for _, ev := range evs {
 			if ev.Scrobble != nil {
 				a.top.Record(*ev.Scrobble)
-				// 0.0.4 : rangées « Écoutés récemment » / « Les plus
-				// écoutés » de l'appli (sans toucher aux lecteurs UPnP).
+				// Refresh the "Recently played" / "Most played" rows of the
+				// control app (without notifying plain UPnP clients).
+				// Rafraîchit les rangées « Écoutés récemment » / « Les plus
+				// écoutés » de l'application (sans prévenir les clients UPnP simples).
 				if a.me != nil {
 					a.me.Changed()
 				}
@@ -368,7 +425,7 @@ func (a *App) pollOnce(ac *actor) error {
 			}
 		}
 		if ev.Scrobble != nil {
-			log.Printf("écoute : %s - %s (%s)", ev.Scrobble.Artist, ev.Scrobble.Track, ev.Scrobble.Player)
+			log.Printf("play: %s - %s (%s)", ev.Scrobble.Artist, ev.Scrobble.Track, ev.Scrobble.Player)
 			a.store.Enqueue(*ev.Scrobble)
 			select {
 			case a.kick <- struct{}{}:
@@ -379,16 +436,22 @@ func (a *App) pollOnce(ac *actor) error {
 	return nil
 }
 
+// handleLastfmErr records a Last.fm error for the page; a revoked session
+// also disconnects the account.
+// handleLastfmErr note une erreur Last.fm pour la page ; une session
+// révoquée déconnecte aussi le compte.
 func (a *App) handleLastfmErr(err error) {
 	var le *LastfmError
 	if errors.As(err, &le) && le.SessionInvalid() {
 		_ = a.store.UpdateConfig(func(c *Config) { c.SessionKey = ""; c.Username = "" })
-		a.store.SetError("Session Last.fm refusée : reconnectez le compte.")
+		a.store.SetError("Last.fm session refused: reconnect the account.")
 		return
 	}
 	a.store.SetError(err.Error())
 }
 
+// flushLoop sends the queue every minute, or at once after a new play.
+// flushLoop envoie la file chaque minute, ou tout de suite après une nouvelle écoute.
 func (a *App) flushLoop(ctx context.Context) {
 	t := time.NewTicker(60 * time.Second)
 	defer t.Stop()
@@ -403,6 +466,8 @@ func (a *App) flushLoop(ctx context.Context) {
 	}
 }
 
+// flush sends the queued plays in batches of 50 (the Last.fm limit).
+// flush envoie les écoutes en attente par lots de 50 (limite de Last.fm).
 func (a *App) flush() {
 	cfg := a.store.Config()
 	if !cfg.Enabled || cfg.SessionKey == "" {
@@ -420,10 +485,12 @@ func (a *App) flush() {
 			continue
 		}
 		var le *LastfmError
-		// Paramètres invalides : le lot ne passera jamais, on l'écarte pour
-		// ne pas bloquer la file.
+		// Invalid parameters (error 6): the batch will never be accepted,
+		// so it is dropped to avoid blocking the queue.
+		// Paramètres invalides (erreur 6) : le lot ne passera jamais, on
+		// l'écarte pour ne pas bloquer la file.
 		if errors.As(err, &le) && le.Code == 6 {
-			log.Printf("lot refusé par Last.fm et écarté : %v", err)
+			log.Printf("batch refused by Last.fm and dropped: %v", err)
 			a.store.Ack(len(batch))
 			a.store.SetError(err.Error())
 			continue
@@ -433,13 +500,16 @@ func (a *App) flush() {
 	}
 }
 
-// PlayerStatus : vue d'un lecteur pour la page d'état.
+// PlayerStatus is the view of one player for the status page.
+// PlayerStatus est la vue d'un lecteur pour la page d'état.
 type PlayerStatus struct {
 	Name, Location, Error, Artist, Title, Album string
 	Played, Duration                            int
 	Scrobbled                                   bool
 }
 
+// players returns the followed players, sorted by name.
+// players renvoie les lecteurs suivis, triés par nom.
 func (a *App) players() []PlayerStatus {
 	a.mu.Lock()
 	defer a.mu.Unlock()

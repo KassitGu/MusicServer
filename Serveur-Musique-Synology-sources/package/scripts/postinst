@@ -1,0 +1,5 @@
+#!/bin/sh
+# Makes the program and the service script executable.
+# Rend le programme et le script de service exécutables.
+chmod 755 "$SYNOPKG_PKGDEST/ohscrobbler" "$SYNOPKG_PKGDEST/musique.sh" 2>/dev/null
+exit 0

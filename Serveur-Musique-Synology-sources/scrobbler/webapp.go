@@ -1,8 +1,13 @@
 package main
 
-// Page :8790, écran « Infos pour l'application de contrôle » (0.0.4) :
-// albums et artistes favoris, biographies et artistes similaires
-// (Last.fm), mode classique de l'interface Kazoo.
+// Settings page (port 8790), "Favourites" and "Preview" tabs: information
+// for the control app (favourite albums and artists, biographies and similar
+// artists from Last.fm) and the choice between the rows interface and
+// classic UPnP mode.
+// Page de réglages (port 8790), onglets « Favoris » et « Aperçu » :
+// informations pour l'application de contrôle (albums et artistes favoris,
+// biographies et artistes similaires venant de Last.fm) et choix entre
+// l'interface en rangées et le mode UPnP classique.
 
 import (
 	"context"
@@ -12,39 +17,52 @@ import (
 	"time"
 )
 
-// favItem : un album ou un artiste affiché sur la page (clé = clé stable de
+// favItem is an album or an artist shown on the page (Key is the stable index
+// key, never a file path).
+// favItem est un album ou un artiste affiché sur la page (Key = clé stable de
 // l'index, jamais un chemin de fichier).
 type favItem struct {
 	Key, Label string
 	Fav        bool
 }
 
+// artistView is the artist sheet: Last.fm biography and similar artists.
+// artistView est la fiche d'un artiste : biographie Last.fm et artistes similaires.
 type artistView struct {
 	Key, Name, Bio, BioLang, LastfmURL, Official string
-	Similar                                      []favItem // présents sur le NAS
-	SimilarOut                                   int       // proposés par Last.fm mais absents du NAS
+	Similar                                      []favItem // those on the NAS / présents sur le NAS
+	SimilarOut                                   int       // suggested by Last.fm but not on the NAS / proposés par Last.fm mais absents du NAS
 	Err                                          string
 	Fav                                          bool
 }
 
-// AppView : données de l'écran « appli ».
+// AppView holds the data of the "Favourites" and "Preview" tabs.
+// AppView contient les données des onglets « Favoris » et « Aperçu ».
 type AppView struct {
 	FavAlbums, FavArtists []favItem
-	QA, QR                string    // recherches saisies
-	AlbumHits, ArtistHits []favItem // résultats (au plus 30)
+	QA, QR                string    // search queries typed / recherches saisies
+	AlbumHits, ArtistHits []favItem // results (30 at most) / résultats (au plus 30)
 	Artist                *artistView
 	TopTracks, LastPlayed []string
+	Loved                 []string // Last.fm loved tracks (preview, first 10) / coups de cœur Last.fm (aperçu, 10 premiers)
+	LovedN                int      // total loved tracks / nombre total de coups de cœur
 	Similar               []string
-	Classic, Kazoo        bool
+	Classic, Rows         bool // classic mode chosen, rows interface available / mode classique choisi, interface en rangées disponible
 	HasKey                bool
 	InfoCount             int
 	InfoErr               string
 }
 
+// pageHits is the maximum number of search results shown.
+// pageHits est le nombre maximal de résultats de recherche affichés.
 const pageHits = 30
 
+// albumLabel returns "Title (Artist)".
+// albumLabel renvoie « Titre (Artiste) ».
 func albumLabel(a *Album) string { return a.Title + " (" + a.Artist + ")" }
 
+// trackLabel returns the track title followed by its artist, if any.
+// trackLabel renvoie le titre du morceau suivi de son artiste, s'il y en a un.
 func trackLabel(ix *Index, t *Track) string {
 	s := trackTitle(t)
 	if t.Artist != "" {
@@ -53,13 +71,19 @@ func trackLabel(ix *Index, t *Track) string {
 	return s
 }
 
-func (a *App) appView(r *http.Request) *AppView {
+// appView builds the "Favourites" and "Preview" tabs: favourites, the rows
+// preview, album and artist searches (queries "qa", "qr") and the artist
+// sheet (query "artist"), fetched from Last.fm with a 20-second limit.
+// appView construit les onglets « Favoris » et « Aperçu » : favoris, aperçu
+// des rangées, recherches d'albums et d'artistes (paramètres « qa », « qr »)
+// et fiche d'artiste (« artist »), demandée à Last.fm avec 20 secondes au plus.
+func (a *App) appView(r *http.Request, lang string) *AppView {
 	if a.lib == nil {
 		return nil
 	}
 	cfg := a.store.Config()
 	ix := a.lib.Index()
-	v := &AppView{Classic: cfg.ClassicUPnP, Kazoo: a.me != nil, HasKey: cfg.APIKey != ""}
+	v := &AppView{Classic: cfg.ClassicUPnP, Rows: a.me != nil, HasKey: cfg.APIKey != ""}
 	for _, al := range a.lib.favoriteAlbums(ix) {
 		v.FavAlbums = append(v.FavAlbums, favItem{Key: al.Key, Label: albumLabel(al), Fav: true})
 	}
@@ -68,6 +92,14 @@ func (a *App) appView(r *http.Request) *AppView {
 	}
 	for _, t := range a.lib.topTracks(ix, meTopCount) {
 		v.TopTracks = append(v.TopTracks, trackLabel(ix, t))
+	}
+	loved := a.lib.lovedTracks(ix, lovedShow)
+	v.LovedN = len(loved)
+	for i, t := range loved {
+		if i == 10 {
+			break
+		}
+		v.Loved = append(v.Loved, trackLabel(ix, t))
 	}
 	for _, t := range a.lib.recentTracks(ix, meTopCount) {
 		v.LastPlayed = append(v.LastPlayed, trackLabel(ix, t))
@@ -122,20 +154,20 @@ func (a *App) appView(r *http.Request) *AppView {
 			}
 		}
 	}
-	if k := q.Get("artiste"); k != "" {
+	if k := q.Get("artist"); k != "" {
 		if ar := ix.Artist(k); ar != nil {
 			av := &artistView{Key: ar.Key, Name: ar.Name, Fav: isFavArtist[ar.Key]}
 			if a.info == nil || !v.HasKey {
-				av.Err = "Enregistrez la clé API Last.fm (réglages, compte Last.fm) pour afficher la biographie."
+				av.Err = tr(lang, "Save the Last.fm API key (Last.fm account tab) to show the biography.")
 			} else {
 				ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 				d, err := a.info.Get(ctx, ar.Name)
 				cancel()
 				switch {
 				case err != nil:
-					av.Err = "Last.fm ne répond pas : " + err.Error()
+					av.Err = trf(lang, "Last.fm does not answer: %s", tr(lang, err.Error()))
 				case !d.Found:
-					av.Err = "Artiste inconnu de Last.fm."
+					av.Err = tr(lang, "Artist unknown to Last.fm.")
 				default:
 					av.Bio, av.BioLang, av.Official = d.Bio, d.BioLang, d.Official
 					if allowedLink(d.LastfmURL) {
@@ -155,10 +187,11 @@ func (a *App) appView(r *http.Request) *AppView {
 	return v
 }
 
-// handleFav : ajouter, retirer ou remonter un album ou un artiste favori.
+// handleFav adds, removes or moves up a favourite album or artist.
+// handleFav ajoute, retire ou remonte un album ou un artiste favori.
 func (a *App) handleFav(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		redirectMsg(w, r, "Fonction indisponible.")
+		redirectMsg(w, r, "Feature unavailable.")
 		return
 	}
 	kind, op, key := r.FormValue("kind"), r.FormValue("op"), r.FormValue("key")
@@ -174,11 +207,11 @@ func (a *App) handleFav(w http.ResponseWriter, r *http.Request) {
 			label = ar.Name
 		}
 	default:
-		redirectMsg(w, r, "Demande invalide.")
+		redirectMsg(w, r, "Invalid request.")
 		return
 	}
 	if label == "" && op != "remove" {
-		redirectMsg(w, r, "Élément introuvable : rechargez la page.")
+		redirectMsg(w, r, "Item not found: reload the page.")
 		return
 	}
 	full := false
@@ -209,10 +242,10 @@ func (a *App) handleFav(w http.ResponseWriter, r *http.Request) {
 	})
 	switch {
 	case err != nil:
-		redirectMsg(w, r, "Enregistrement impossible : "+err.Error())
+		redirectMsg(w, r, "Could not save: %s", err)
 		return
 	case full:
-		redirectMsg(w, r, "50 favoris au plus (une rangée de l'application de contrôle n'en montre pas davantage).")
+		redirectMsg(w, r, "50 favourites at most (a row of the control app shows no more).")
 		return
 	}
 	if a.ms != nil {
@@ -224,31 +257,41 @@ func (a *App) handleFav(w http.ResponseWriter, r *http.Request) {
 	if a.photos != nil {
 		a.photos.Kick()
 	}
-	msg := map[string]string{"add": "ajouté aux favoris", "remove": "retiré des favoris", "up": "remonté"}[op]
-	if msg == "" {
-		redirectMsg(w, r, "Demande invalide.")
+	var msg string
+	switch op {
+	case "add":
+		msg = "%s: added to the favourites."
+	case "remove":
+		msg = "%s: removed from the favourites."
+	case "up":
+		msg = "%s: moved up."
+	default:
+		redirectMsg(w, r, "Invalid request.")
 		return
 	}
 	if label == "" {
-		label = "Favori"
+		label = "Favourite"
 	}
-	redirectOK(w, r, label+" : "+msg+".")
+	redirectOK(w, r, msg, label)
 }
 
-// handleClassic : mode UPnP classique (sans interface Kazoo). Appliqué au
-// redémarrage, pour que l'application de contrôle relise la description du serveur.
+// handleClassic switches classic UPnP mode (without the rows interface). It is
+// applied on restart, so that the control app reads the server description again.
+// handleClassic active le mode UPnP classique (sans l'interface en rangées).
+// Appliqué au redémarrage, pour que l'application de contrôle relise la
+// description du serveur.
 func (a *App) handleClassic(w http.ResponseWriter, r *http.Request) {
 	on := r.FormValue("classic") == "on"
 	if err := a.store.UpdateConfig(func(c *Config) { c.ClassicUPnP = on }); err != nil {
-		redirectMsg(w, r, "Enregistrement impossible : "+err.Error())
+		redirectMsg(w, r, "Could not save: %s", err)
 		return
 	}
-	if a.diag != nil && a.diag.LogDir != "" {
+	if a.supervised() {
 		_ = writeRequest(a.store.dir, requestRestart, []byte("1\n"))
 	}
 	if on {
-		redirectOK(w, r, "Mode classique enregistré : le serveur redémarre, l'application de contrôle affichera des dossiers.")
+		redirectOK(w, r, "Classic mode saved: the server restarts, the control app will show folders.")
 	} else {
-		redirectOK(w, r, "Interface en rangées enregistrée : le serveur redémarre, l'application de contrôle affichera les rangées.")
+		redirectOK(w, r, "Rows interface saved: the server restarts, the control app will show the rows.")
 	}
 }

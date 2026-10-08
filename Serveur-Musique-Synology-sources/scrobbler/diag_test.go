@@ -16,20 +16,27 @@ func TestValidMusicDir(t *testing.T) {
 	share := filepath.Join(root, "share")
 	os.MkdirAll(filepath.Join(share, "Musique", "Jazz"), 0o755)
 	os.MkdirAll(filepath.Join(root, "etc"), 0o755)
+	// DSM system folders / dossiers système de DSM.
+	os.MkdirAll(filepath.Join(share, "@appstore", "x"), 0o755)
+	os.MkdirAll(filepath.Join(share, "#recycle"), 0o755)
 	os.WriteFile(filepath.Join(share, "fichier"), []byte("x"), 0o644)
 	d := &Diag{Shares: share}
 	ok := []string{share + "/Musique", share + "/Musique/Jazz/", share + "/Musique/./Jazz"}
 	for _, p := range ok {
 		if _, err := d.ValidMusicDir(p); err != nil {
-			t.Errorf("%q refusé : %v", p, err)
+			t.Errorf("%q refused: %v", p, err)
 		}
 	}
 	bad := []string{"", share, share + "/", share + "/../etc", root + "/etc", share + "/absent",
-		share + "/fichier", share + "/Musique\n[x]", "relatif/Musique", share + "x/Musique"}
+		share + "/fichier", share + "/Musique\n[x]", "relatif/Musique", share + "x/Musique",
+		share + "/@appstore", share + "/@appstore/x", share + "/#recycle"}
 	for _, p := range bad {
 		if _, err := d.ValidMusicDir(p); err == nil {
-			t.Errorf("%q accepté", p)
+			t.Errorf("%q accepted", p)
 		}
+	}
+	if got := d.listShares(); len(got) != 1 || got[0] != share+"/Musique" {
+		t.Errorf("listShares: %v", got)
 	}
 }
 
@@ -46,7 +53,7 @@ func TestTail(t *testing.T) {
 		t.Fatalf("tail = %q", got)
 	}
 	if tail(filepath.Join(t.TempDir(), "absent"), 3) != "" {
-		t.Fatal("fichier absent")
+		t.Fatal("missing file")
 	}
 }
 
@@ -57,8 +64,8 @@ func TestStatePageAndRequests(t *testing.T) {
 	os.MkdirAll(filepath.Join(share, "Music"), 0o755)
 	os.MkdirAll(filepath.Join(share, "CACHEDEV1_DATA"), 0o755)
 	os.MkdirAll(logs, 0o755)
-	os.WriteFile(filepath.Join(logs, "etat.txt"), []byte("SERVEUR=actif\nMUSIC_DIR=/share/Music\nMUSIC_DIR_OK=non\nPLANTAGES=3\nNOM=Musique <NAS>\n"), 0o644)
-	os.WriteFile(filepath.Join(logs, "serveur.log"), []byte("panic: <script>\n"), 0o644)
+	os.WriteFile(filepath.Join(logs, stateFile), []byte("SERVER=running\nMUSIC_DIR=/share/Music\nMUSIC_DIR_OK=no\nCRASHES=3\nLAST_EXIT_TIME=07/10/2026 20:00:00\nLAST_EXIT_CODE=137\nNAME=Musique <NAS>\n"), 0o644)
+	os.WriteFile(filepath.Join(logs, serverLogFile), []byte("panic: <script>\n"), 0o644)
 	store, err := OpenStore(filepath.Join(root, "data"))
 	if err != nil {
 		t.Fatal(err)
@@ -67,29 +74,30 @@ func TestStatePageAndRequests(t *testing.T) {
 		diag: &Diag{LogDir: logs, StateDir: logs, Shares: share}}
 	h := app.httpServer(":0").Handler
 
-	// 0.0.4 : l'état du serveur est dans l'écran des réglages.
-	req := httptest.NewRequest("GET", "/?p=reglages", nil)
+	// The server state is in the "Music server" tab.
+	// L'état du serveur est dans l'onglet « Serveur de musique ».
+	req := httptest.NewRequest("GET", "/?p=server", nil)
 	req.RemoteAddr = "192.168.68.56:5000"
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	body := rec.Body.String()
-	for _, want := range []string{"introuvable ou illisible", "Musique &lt;NAS&gt;", "panic: &lt;script&gt;", share + "/Music"} {
+	for _, want := range []string{"not found or unreadable", "Musique &lt;NAS&gt;", "panic: &lt;script&gt;", share + "/Music", "killed (code 137, out of memory?)"} {
 		if !strings.Contains(body, want) {
-			t.Errorf("page sans %q", want)
+			t.Errorf("page without %q", want)
 		}
 	}
-	if strings.Contains(body, "ne tourne plus") {
-		t.Error("état récent signalé comme périmé")
+	if strings.Contains(body, "no longer running") {
+		t.Error("recent state reported as stale")
 	}
 	old := time.Now().Add(-5 * time.Minute)
-	os.Chtimes(filepath.Join(logs, "etat.txt"), old, old)
+	os.Chtimes(filepath.Join(logs, stateFile), old, old)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if !strings.Contains(rec.Body.String(), "ne tourne plus") {
-		t.Error("état périmé non signalé")
+	if !strings.Contains(rec.Body.String(), "no longer running") {
+		t.Error("stale state not reported")
 	}
 	if strings.Contains(body, "CACHEDEV1_DATA") {
-		t.Error("volume interne listé")
+		t.Error("internal volume listed")
 	}
 
 	post := func(path string, form url.Values, origin string) *httptest.ResponseRecorder {
@@ -104,21 +112,22 @@ func TestStatePageAndRequests(t *testing.T) {
 		h.ServeHTTP(w, r)
 		return w
 	}
+	// Without an origin: refused (CSRF).
 	// Sans origine : refusé (CSRF).
 	if w := post("/musicdir", url.Values{"music_dir": {share + "/Music"}}, ""); w.Code != http.StatusForbidden {
-		t.Fatalf("CSRF : code %d", w.Code)
+		t.Fatalf("CSRF: code %d", w.Code)
 	}
 	post("/musicdir", url.Values{"music_dir": {share + "/../etc"}}, "http://nas:8790")
 	if _, err := os.Stat(filepath.Join(root, "data", requestMusicDir)); err == nil {
-		t.Fatal("demande créée pour un chemin refusé")
+		t.Fatal("request created for a refused path")
 	}
 	post("/musicdir", url.Values{"music_dir": {share + "/Music/"}}, "http://nas:8790")
 	b, err := os.ReadFile(filepath.Join(root, "data", requestMusicDir))
 	if err != nil || string(b) != share+"/Music\n" {
-		t.Fatalf("demande dossier = %q, %v", b, err)
+		t.Fatalf("folder request = %q, %v", b, err)
 	}
 	post("/restart", nil, "http://nas:8790")
 	if _, err := os.Stat(filepath.Join(root, "data", requestRestart)); err != nil {
-		t.Fatal("demande de redémarrage absente")
+		t.Fatal("restart request missing")
 	}
 }

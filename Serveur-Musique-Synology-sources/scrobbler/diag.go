@@ -1,17 +1,22 @@
 package main
 
-// État du serveur et journaux, affichés sur la page de configuration.
+// Server state and logs, shown on the settings page.
+// État du serveur et journaux, affichés sur la page de réglages.
 //
+// Why: the NAS may not have SSH enabled and the package folder is hidden in
+// File Station. Without this page there is no way to see why the server
+// stopped or which network card it announces itself on.
 // Pourquoi : le NAS n'a pas forcément SSH activé et le dossier du paquet est
-// caché dans File Station. Sans cette page, impossible de savoir pourquoi
-// le serveur s'est arrêté ou sur quelle carte réseau il s'annonce.
+// caché dans File Station. Sans cette page, impossible de savoir pourquoi le
+// serveur s'est arrêté ou sur quelle carte réseau il s'annonce.
 //
+// The program runs unprivileged: it only READS the state written by the
+// supervisor (musique.sh, root) and drops "requests" (music folder change,
+// server name, restart) that the supervisor checks again before applying.
 // Le programme tourne sans privilèges : il ne fait que LIRE l'état écrit par
-// le superviseur (musique.sh, root) et déposer des « demandes » (changement de
-// dossier musique, redémarrage) que le superviseur vérifie puis applique.
-//
-// 0.0.3 : Gerbera est retiré ; le journal affiché est celui du serveur
-// Musique NAS (ce programme), écrit dans LogDir/serveur.log.
+// le superviseur (musique.sh, root) et déposer des « demandes » (dossier
+// musique, nom diffusé, redémarrage) que le superviseur revérifie avant de
+// les appliquer.
 
 import (
 	"bufio"
@@ -25,35 +30,57 @@ import (
 	"unicode"
 )
 
+// File names shared with the supervisor (musique.sh): requests dropped in the
+// data folder, state and logs read from the log folders.
+// Noms de fichiers partagés avec le superviseur (musique.sh) : demandes
+// déposées dans le dossier de données, état et journaux lus dans les dossiers
+// de journaux.
 const (
-	requestMusicDir = "demande-dossier"
-	requestRestart  = "demande-redemarrage"
-	requestName     = "demande-nom" // 0.0.4 : nom diffusé
+	requestMusicDir = "request-music-dir"
+	requestRestart  = "request-restart"
+	requestName     = "request-name"
+	stateFile       = "state.txt"
+	serverLogFile   = "server.log"
+	superLogFile    = "supervisor.log"
 	maxLogBytes     = 64 * 1024
 )
 
+// Diag gives the settings page read access to the supervisor's state and logs.
+// Diag donne à la page de réglages l'accès en lecture à l'état et aux
+// journaux du superviseur.
 type Diag struct {
-	LogDir   string // journaux du serveur (compte non privilégié)
-	StateDir string // état et journal du superviseur (root, lecture seule ici)
-	Shares   string // racine des dossiers partagés (/share sur QTS)
+	LogDir   string // server logs (unprivileged account) / journaux du serveur (compte non privilégié)
+	StateDir string // supervisor state and log (root, read-only here) / état et journal du superviseur (root, lecture seule ici)
+	Shares   string // root of the shared folders (/share on QTS) / racine des dossiers partagés (/share sur QTS)
 }
 
+// ServerState is what the supervisor last reported, plus the requests still
+// waiting to be applied.
+// ServerState : ce que le superviseur a indiqué en dernier, plus les
+// demandes pas encore appliquées.
 type ServerState struct {
-	Known       bool
-	Stale       bool // état non rafraîchi : superviseur arrêté
-	Values      map[string]string
-	Shares      []string
-	ServerLog   string
-	SuperLog    string
-	PendingDir  string
-	PendingBoot bool
-	PendingName string // 0.0.4
+	Known        bool
+	Stale        bool // state not refreshed: supervisor stopped / état non rafraîchi : superviseur arrêté
+	Name         string
+	MusicDir     string
+	MusicDirOK   bool
+	Crashes      string
+	LastExitTime string
+	LastExitCode string // exit status, described by exitText / code de sortie, décrit par exitText
+	Updated      string
+	Shares       []string
+	ServerLog    string
+	SuperLog     string
+	PendingDir   string
+	PendingBoot  bool
+	PendingName  string
 }
 
-// readState lit etat.txt (clé=valeur, écrit par le superviseur).
+// readState parses state.txt (key=value lines written by the supervisor).
+// readState lit state.txt (lignes clé=valeur écrites par le superviseur).
 func (d *Diag) readState() map[string]string {
 	out := map[string]string{}
-	f, err := os.Open(filepath.Join(d.StateDir, "etat.txt"))
+	f, err := os.Open(filepath.Join(d.StateDir, stateFile))
 	if err != nil {
 		return out
 	}
@@ -67,7 +94,10 @@ func (d *Diag) readState() map[string]string {
 	return out
 }
 
-// tail renvoie au plus n dernières lignes d'un fichier (lecture bornée).
+// tail returns at most the last n lines of a file, reading no more than
+// maxLogBytes from its end.
+// tail renvoie au plus les n dernières lignes d'un fichier, sans lire plus
+// de maxLogBytes depuis la fin.
 func tail(path string, n int) string {
 	f, err := os.Open(path)
 	if err != nil {
@@ -78,17 +108,14 @@ func tail(path string, n int) string {
 	if err != nil {
 		return ""
 	}
-	off := st.Size() - maxLogBytes
-	if off < 0 {
-		off = 0
-	}
+	off := max(st.Size()-maxLogBytes, 0)
 	buf := make([]byte, st.Size()-off)
 	if _, err := f.ReadAt(buf, off); err != nil && !errors.Is(err, io.EOF) {
 		return ""
 	}
 	lines := strings.Split(strings.TrimRight(string(buf), "\n"), "\n")
 	if off > 0 && len(lines) > 1 {
-		lines = lines[1:] // première ligne probablement tronquée
+		lines = lines[1:] // first line is probably cut / première ligne probablement tronquée
 	}
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]
@@ -96,22 +123,8 @@ func tail(path string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
-// Ancienne fonction (0.0.2) : adresse annoncée lue dans le journal de
-// Gerbera. Inutile depuis 0.0.3 : l'adresse vient de l'annonce SSDP du
-// programme lui-même.
-// func boundTo(log string) string {
-// 	const marker = "Server bound to:"
-// 	i := strings.LastIndex(log, marker)
-// 	if i < 0 {
-// 		return ""
-// 	}
-// 	rest := log[i+len(marker):]
-// 	if j := strings.IndexByte(rest, '\n'); j >= 0 {
-// 		rest = rest[:j]
-// 	}
-// 	return strings.TrimSpace(rest)
-// }
-
+// listShares lists the shared folders a music folder can be chosen from.
+// listShares liste les dossiers partagés parmi lesquels choisir le dossier musique.
 func (d *Diag) listShares() []string {
 	ents, err := os.ReadDir(d.Shares)
 	if err != nil {
@@ -120,9 +133,12 @@ func (d *Diag) listShares() []string {
 	var out []string
 	for _, e := range ents {
 		name := e.Name()
-		// Volumes internes de QTS, pas des dossiers partagés.
-		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "CACHEDEV") || strings.HasSuffix(name, "_DATA") ||
-			strings.HasPrefix(name, "external") || name == "HDA_DATA" {
+		// System folders, not shared folders: QTS internal volumes, and the
+		// "@..." and "#..." folders of DSM (@appstore, #recycle...).
+		// Dossiers système, pas des dossiers partagés : volumes internes de
+		// QTS, et dossiers « @… » et « #… » de DSM (@appstore, #recycle…).
+		if systemShare(name) || strings.HasPrefix(name, "CACHEDEV") || strings.HasSuffix(name, "_DATA") ||
+			strings.HasPrefix(name, "external") {
 			continue
 		}
 		p := filepath.Join(d.Shares, name)
@@ -134,19 +150,26 @@ func (d *Diag) listShares() []string {
 	return out
 }
 
+// systemShare reports a hidden or system folder name (".", "@" or "#" first),
+// never offered nor accepted as a music folder.
+// systemShare signale un nom de dossier caché ou système (« . », « @ » ou
+// « # » en tête), jamais proposé ni accepté comme dossier musique.
+func systemShare(name string) bool {
+	return name != "" && strings.ContainsRune(".@#", rune(name[0]))
+}
+
+// State gathers everything the "Music server" tab shows.
+// State rassemble tout ce qu'affiche l'onglet « Serveur de musique ».
 func (d *Diag) State(dataDir string) ServerState {
-	s := ServerState{Values: d.readState()}
-	s.Known = len(s.Values) > 0
-	if st, err := os.Stat(filepath.Join(d.StateDir, "etat.txt")); err == nil && time.Since(st.ModTime()) > 2*time.Minute {
+	v := d.readState()
+	s := ServerState{Known: len(v) > 0, Name: v["NAME"], MusicDir: v["MUSIC_DIR"], MusicDirOK: v["MUSIC_DIR_OK"] == "yes",
+		Crashes: v["CRASHES"], LastExitTime: v["LAST_EXIT_TIME"], LastExitCode: v["LAST_EXIT_CODE"], Updated: v["UPDATED"]}
+	if st, err := os.Stat(filepath.Join(d.StateDir, stateFile)); err == nil && time.Since(st.ModTime()) > 2*time.Minute {
 		s.Stale = true
 	}
 	s.Shares = d.listShares()
-	// Ancien fonctionnement (0.0.2, Gerbera), conservé pour référence :
-	// s.GerberaLog = tail(filepath.Join(d.LogDir, "gerbera.log"), 60)
-	// s.ErrorsLog = tail(filepath.Join(d.LogDir, "gerbera-erreurs.log"), 40)
-	// s.BoundTo = boundTo(s.GerberaLog)
-	s.ServerLog = tail(filepath.Join(d.LogDir, "serveur.log"), 80)
-	s.SuperLog = tail(filepath.Join(d.StateDir, "superviseur.log"), 40)
+	s.ServerLog = tail(filepath.Join(d.LogDir, serverLogFile), 80)
+	s.SuperLog = tail(filepath.Join(d.StateDir, superLogFile), 40)
 	if b, err := os.ReadFile(filepath.Join(dataDir, requestMusicDir)); err == nil {
 		s.PendingDir = strings.TrimSpace(string(b))
 	}
@@ -158,24 +181,56 @@ func (d *Diag) State(dataDir string) ServerState {
 	return s
 }
 
+// exitText describes the program's last exit status.
+// exitText décrit le dernier code de sortie du programme.
+func exitText(lang, code string) string {
+	switch code {
+	case "":
+		return ""
+	case "0":
+		return tr(lang, "normal stop (code 0)")
+	case "1":
+		return tr(lang, "start-up error (code 1, see the server log)")
+	case "2":
+		return tr(lang, "internal error (code 2, see the server log)")
+	case "137":
+		return tr(lang, "killed (code 137, out of memory?)")
+	case "139":
+		return tr(lang, "memory error (code 139)")
+	}
+	return trf(lang, "code %s", code)
+}
+
+var (
+	errBadPath     = errors.New("invalid path")
+	errDirNotFound = errors.New("folder not found")
+	errOutsideRoot = errors.New("the folder must be inside the shared folders")
+)
+
+// ValidMusicDir checks a music folder requested from the page. The
+// supervisor runs the same checks again before applying it.
 // ValidMusicDir vérifie un dossier musique demandé depuis la page. Le
 // superviseur refait les mêmes contrôles avant de l'appliquer.
 func (d *Diag) ValidMusicDir(p string) (string, error) {
 	if p == "" || len(p) > 512 || strings.IndexFunc(p, unicode.IsControl) >= 0 {
-		return "", errors.New("chemin invalide")
+		return "", errBadPath
 	}
 	clean := filepath.Clean(p)
 	root := filepath.Clean(d.Shares) + "/"
 	if !strings.HasPrefix(clean+"/", root) || clean+"/" == root {
-		return "", errors.New("le dossier doit être dans " + root)
+		return "", errOutsideRoot
+	}
+	if share, _, _ := strings.Cut(strings.TrimPrefix(clean+"/", root), "/"); systemShare(share) {
+		return "", errOutsideRoot
 	}
 	st, err := os.Stat(clean)
 	if err != nil || !st.IsDir() {
-		return "", errors.New("dossier introuvable : " + clean)
+		return "", errDirNotFound
 	}
 	return clean, nil
 }
 
+// writeRequest drops a request for the supervisor (atomic write).
 // writeRequest dépose une demande pour le superviseur (écriture atomique).
 func writeRequest(dataDir, name string, content []byte) error {
 	tmp := filepath.Join(dataDir, "."+name+".tmp")

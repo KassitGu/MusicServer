@@ -1,13 +1,21 @@
 package main
 
-// Serveur de médias UPnP « Musique NAS » vu par les lecteurs OpenHome :
+// The "Musique NAS" UPnP media server as seen by OpenHome players: device
+// description, icons, ContentDirectory and ConnectionManager services (SOAP)
+// and event subscriptions (GENA).
+//
+// Why a server of our own: the control app only shows the folder tree sent by
+// the server. To offer the intended home screen (favourite genres, Last.fm
+// most played, recent additions, artist photos), the tree must be built here.
+//
+// Le serveur de médias UPnP « Musique NAS » vu par les lecteurs OpenHome :
 // description de l'appareil, icônes, services ContentDirectory et
 // ConnectionManager (SOAP) et abonnements aux événements (GENA).
 //
-// Pourquoi un serveur à nous : l'application de contrôle n'affiche que l'arborescence de
-// dossiers envoyée par le serveur. Pour obtenir l'accueil voulu par Bertrand
-// (genres favoris, plus écoutés Last.fm, derniers ajouts, photos d'artistes),
-// il faut construire cette arborescence nous-mêmes.
+// Pourquoi un serveur à nous : l'application de contrôle n'affiche que
+// l'arborescence de dossiers envoyée par le serveur. Pour offrir l'accueil
+// voulu (genres favoris, plus écoutés Last.fm, derniers ajouts, photos
+// d'artistes), il faut construire cette arborescence ici.
 
 import (
 	"bytes"
@@ -36,28 +44,36 @@ const (
 	devType = "urn:schemas-upnp-org:device:MediaServer:1"
 )
 
+// MediaServer holds the state of the UPnP server.
 // MediaServer regroupe l'état du serveur UPnP.
 type MediaServer struct {
 	Name     string
-	UDN      string // « uuid:… »
+	UDN      string // "uuid:…"
 	Version  string
 	lib      *LibraryService
 	updateID atomic.Uint32
 	subs     *eventSubs
 
-	// 0.0.4 : interface Kazoo (mediaendpoint.go). Endpoint nil ou
-	// Classic() vrai : description UPnP simple, comme en 0.0.3.
+	// Rows interface (mediaendpoint.go). When Endpoint is nil or Classic()
+	// returns true, a plain UPnP description is served.
+	// Interface en rangées (mediaendpoint.go). Si Endpoint est nil ou si
+	// Classic() renvoie vrai, une description UPnP simple est servie.
 	Endpoint *MediaEndpoint
 	Classic  func() bool
-	PagePort int // port de la page de réglages (lien depuis « / »)
+	PagePort int // settings page port (link from "/") / port de la page de réglages (lien depuis « / »)
 }
 
+// NewMediaServer creates the server; the update ID starts from the clock so
+// that players notice a restart.
+// NewMediaServer crée le serveur ; l'identifiant de mise à jour part de
+// l'horloge pour que les lecteurs remarquent un redémarrage.
 func NewMediaServer(name, udn, version string, lib *LibraryService) *MediaServer {
 	ms := &MediaServer{Name: name, UDN: udn, Version: version, lib: lib, subs: newEventSubs()}
 	ms.updateID.Store(uint32(time.Now().Unix() % 100000))
 	return ms
 }
 
+// Routes adds the UPnP and media paths to the HTTP router.
 // Routes ajoute les adresses UPnP et média au routeur HTTP.
 func (ms *MediaServer) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /description.xml", ms.handleDescription)
@@ -75,12 +91,18 @@ func (ms *MediaServer) Routes(mux *http.ServeMux) {
 	}
 }
 
+// kazoo reports whether the rows interface is advertised (same behaviour as
+// Kazoo Server).
+// kazoo indique si l'interface en rangées est annoncée (même comportement
+// que Kazoo Server).
 func (ms *MediaServer) kazoo() bool {
 	return ms.Endpoint != nil && (ms.Classic == nil || !ms.Classic())
 }
 
-// handlePresentation : la presentationURL (exigée par l'application de contrôle avec
-// X_PATH) mène, dans un navigateur, à la page de réglages.
+// handlePresentation: the presentationURL (required by the control app along
+// with X_PATH) leads, in a browser, to the settings page.
+// handlePresentation : la presentationURL (exigée par l'application de
+// contrôle avec X_PATH) mène, dans un navigateur, à la page de réglages.
 func (ms *MediaServer) handlePresentation(w http.ResponseWriter, r *http.Request) {
 	if ms.PagePort == 0 {
 		http.NotFound(w, r)
@@ -94,6 +116,7 @@ func (ms *MediaServer) handlePresentation(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, "http://"+net.JoinHostPort(host, strconv.Itoa(ms.PagePort))+"/", http.StatusFound)
 }
 
+// Changed: the index has changed; notifies the subscribed players.
 // Changed : l'index a changé ; prévient les lecteurs abonnés.
 func (ms *MediaServer) Changed() {
 	ms.updateID.Add(1)
@@ -131,8 +154,11 @@ func (ms *MediaServer) handleDescription(w http.ResponseWriter, r *http.Request)
 				f.mime, s, s, s, f.ext)
 		}
 	}
-	// 0.0.4 : X_PATH et presentationURL font de ce serveur un serveur
-	// « Kazoo » pour l'application de contrôle (accueil en rangées, recherche). L'appli
+	// X_PATH and presentationURL make the control app treat this server like
+	// Kazoo Server (rows home screen, search). The app requires an absolute
+	// presentationURL with an IPv4 address.
+	// X_PATH et presentationURL font traiter ce serveur comme Kazoo Server
+	// par l'application de contrôle (accueil en rangées, recherche). L'appli
 	// exige une presentationURL absolue avec une adresse IPv4.
 	kazoo := ""
 	if ms.kazoo() {
@@ -182,7 +208,10 @@ func (ms *MediaServer) handleIcon(w http.ResponseWriter, r *http.Request) {
 
 type soapArgs map[string]string
 
-// parseSOAP lit le nom de l'action (en-tête SOAPACTION) et ses arguments.
+// parseSOAP reads the action name (SOAPACTION header, or the first element of
+// the Body when the header is missing) and its arguments.
+// parseSOAP lit le nom de l'action (en-tête SOAPACTION, ou premier élément
+// du Body si l'en-tête manque) et ses arguments.
 func parseSOAP(r *http.Request) (string, soapArgs, error) {
 	sa := strings.Trim(r.Header.Get("SOAPACTION"), `" `)
 	action := sa
@@ -277,6 +306,7 @@ func (ms *MediaServer) handleCM(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
+// GENA events (player subscriptions to library changes)
 // Événements GENA (abonnements des lecteurs aux changements de la bibliothèque)
 
 type subscription struct {
@@ -288,7 +318,7 @@ type subscription struct {
 
 type eventSubs struct {
 	mu   sync.Mutex
-	subs map[string]map[string]*subscription // service -> SID -> abonnement
+	subs map[string]map[string]*subscription // service -> SID -> subscription / abonnement
 }
 
 func newEventSubs() *eventSubs {
@@ -302,6 +332,10 @@ func newSID() string {
 	return "uuid:" + h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
 }
 
+// parseTimeout reads a "Second-N" TIMEOUT header, capped at one hour;
+// 30 minutes by default.
+// parseTimeout lit un en-tête TIMEOUT « Second-N », limité à une heure ;
+// 30 minutes par défaut.
 func parseTimeout(h string) time.Duration {
 	if strings.HasPrefix(strings.ToLower(h), "second-") {
 		if n, err := strconv.Atoi(h[7:]); err == nil && n > 0 {
@@ -314,6 +348,8 @@ func parseTimeout(h string) time.Duration {
 	return 1800 * time.Second
 }
 
+// parseCallbacks reads "<http://a/>< http://b/>"; only http URLs pointing to
+// a local address are accepted (prevents using the server as a relay).
 // parseCallbacks lit « <http://a/>< http://b/> » ; seules les URL http vers
 // une adresse locale sont acceptées (évite d'utiliser le serveur comme relais).
 func parseCallbacks(h string) []string {
@@ -373,6 +409,7 @@ func (es *eventSubs) handler(service string, props func() map[string]string) htt
 			w.Header().Set("SID", s.sid)
 			w.Header().Set("TIMEOUT", "Second-"+strconv.Itoa(int(to.Seconds())))
 			w.Header().Set("Content-Length", "0")
+			// Initial event, sent after the response (UPnP specification).
 			// Événement initial, envoyé après la réponse (spécification UPnP).
 			p := props()
 			go func() {
@@ -404,6 +441,8 @@ func (es *eventSubs) notify(service string, props map[string]string) {
 
 var eventClient = &http.Client{Timeout: 5 * time.Second}
 
+// sendEvent delivers a NOTIFY to the first callback URL that accepts it.
+// sendEvent envoie un NOTIFY à la première URL de rappel qui l'accepte.
 func sendEvent(s *subscription, seq uint32, props map[string]string) {
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="utf-8"?><e:propertyset xmlns:e="urn:schemas-upnp-org:event-1-0">`)
@@ -429,6 +468,7 @@ func sendEvent(s *subscription, seq uint32, props map[string]string) {
 	}
 }
 
+// localIPv4: IPv4 address of the interface (for LOCATION and the URLs).
 // localIPv4 : adresse IPv4 de l'interface (pour LOCATION et les URL).
 func localIPv4(iface *net.Interface) net.IP {
 	addrs, err := iface.Addrs()
@@ -447,14 +487,17 @@ func localIPv4(iface *net.Interface) net.IP {
 
 func logf(format string, args ...any) { log.Printf(format, args...) }
 
+// lanOnly: the music server only answers the local network. There is no
+// origin check here (unlike the settings page): players and the control app
+// send SOAP requests without an Origin header, and this server changes nothing.
 // lanOnly : le serveur de musique ne répond qu'au réseau local. Pas de
-// contrôle d'origine ici (contrairement à la page 8790) : les lecteurs et
-// l'application de contrôle envoient des requêtes SOAP sans en-tête Origin, et ce
-// serveur ne modifie rien.
+// contrôle d'origine ici (contrairement à la page de réglages) : les lecteurs
+// et l'application de contrôle envoient des requêtes SOAP sans en-tête
+// Origin, et ce serveur ne modifie rien.
 func lanOnly(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !isLocal(r.RemoteAddr) {
-			http.Error(w, "accès réservé au réseau local", http.StatusForbidden)
+			http.Error(w, "local network only", http.StatusForbidden)
 			return
 		}
 		h.ServeHTTP(w, r)

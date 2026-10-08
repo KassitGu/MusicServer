@@ -1,0 +1,4 @@
+component	version	licence	source	files
+ohscrobbler (the package program)	see package/INFO	MIT (MIT.txt)	this repository (scrobbler/)	ohscrobbler
+badge logos (built into ohscrobbler)	-	trademarks of their owners, personal use	MP3: seeklogo.com; CD Audio: Wikimedia Commons; Hi-Res Audio: Japan Audio Society	scrobbler/badges/mp3.png, cd.png, hires.png
+Inter Bold font (badge resolution text, pre-rendered)	4.0	OFL-1.1 (OFL-1.1-Inter.txt)	https://github.com/rsms/inter	scrobbler/badges/font.png, font.json

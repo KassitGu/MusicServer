@@ -35,34 +35,37 @@ func TestFavoritesPage(t *testing.T) {
 	ix := ls.Index()
 	kob := ix.AlbumByName("Miles Davis", "Kind of Blue")
 	miles := ix.ArtistByName("Miles Davis")
+	// Album search, then adding it.
 	// Recherche d'album puis ajout.
-	body := do("GET", "/?p=appli&qa=kind", nil).Body.String()
+	body := do("GET", "/?p=favourites&qa=kind", nil).Body.String()
 	if !strings.Contains(body, `name="key" value="`+kob.Key+`"`) {
-		t.Fatalf("résultat de recherche absent :\n%s", body)
+		t.Fatalf("search result missing:\n%s", body)
 	}
-	w := do("POST", "/fav", url.Values{"kind": {"album"}, "op": {"add"}, "key": {kob.Key}, "back": {"appli"}, "at": {"albums"}})
-	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/?p=appli&ok=1&") || !strings.HasSuffix(loc, "#albums") {
-		t.Fatalf("ajout : %d %s", w.Code, loc)
+	w := do("POST", "/fav", url.Values{"kind": {"album"}, "op": {"add"}, "key": {kob.Key}, "back": {"favourites"}, "at": {"albums"}})
+	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/?p=favourites&") || !strings.Contains(loc, "ok=1") || !strings.HasSuffix(loc, "#albums") {
+		t.Fatalf("add: %d %s", w.Code, loc)
 	}
 	do("POST", "/fav", url.Values{"kind": {"artist"}, "op": {"add"}, "key": {miles.Key}})
-	do("POST", "/fav", url.Values{"kind": {"artist"}, "op": {"add"}, "key": {miles.Key}}) // doublon ignoré
+	do("POST", "/fav", url.Values{"kind": {"artist"}, "op": {"add"}, "key": {miles.Key}}) // duplicate ignored / doublon ignoré
 	if c := store.Config(); len(c.FavoriteAlbums) != 1 || len(c.FavoriteArtists) != 1 {
-		t.Fatalf("favoris : %+v %+v", c.FavoriteAlbums, c.FavoriteArtists)
+		t.Fatalf("favourites: %+v %+v", c.FavoriteAlbums, c.FavoriteArtists)
 	}
+	// Unknown key or unknown kind: refused.
 	// Clé inconnue ou type inconnu : refusés.
 	if w = do("POST", "/fav", url.Values{"kind": {"album"}, "op": {"add"}, "key": {"../etc"}}); strings.Contains(w.Header().Get("Location"), "ok=1") {
-		t.Fatal("clé inconnue acceptée")
+		t.Fatal("unknown key accepted")
 	}
 	if w = do("POST", "/fav", url.Values{"kind": {"x"}, "op": {"add"}, "key": {kob.Key}}); strings.Contains(w.Header().Get("Location"), "ok=1") {
-		t.Fatal("type inconnu accepté")
+		t.Fatal("unknown kind accepted")
 	}
+	// Bogus anchor or screen: ignored.
 	// Ancre ou écran fantaisistes : ignorés.
 	w = do("POST", "/fav", url.Values{"kind": {"album"}, "op": {"remove"}, "key": {kob.Key}, "back": {"//evil"}, "at": {"x\"><script>"}})
-	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/?p=&ok=1") || strings.Contains(loc, "#") {
-		t.Fatalf("redirection : %s", loc)
+	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/?p=&") || !strings.Contains(loc, "ok=1") || strings.Contains(loc, "#") {
+		t.Fatalf("redirect: %s", loc)
 	}
 	if len(store.Config().FavoriteAlbums) != 0 {
-		t.Fatal("retrait")
+		t.Fatal("removal")
 	}
 	// CSRF.
 	r := httptest.NewRequest("POST", "/fav", strings.NewReader("kind=album&op=add&key="+kob.Key))
@@ -71,16 +74,22 @@ func TestFavoritesPage(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, r)
 	if rec.Code != 403 {
-		t.Fatalf("CSRF : %d", rec.Code)
+		t.Fatalf("CSRF: %d", rec.Code)
 	}
-	// Écrans : accueil (lecteurs), réglages (Last.fm), pas de « Écoutes ».
+	// Tabs: every tab is reachable from every screen, one section each.
+	// Onglets : chaque onglet est accessible depuis chaque écran, une rubrique chacun.
 	home := do("GET", "/", nil).Body.String()
-	if !strings.Contains(home, "Lecteurs détectés") || !strings.Contains(home, `href="/?p=reglages"`) || strings.Contains(home, "Compte Last.fm") ||
-		strings.Contains(home, "<h2>Écoutes</h2>") {
-		t.Fatalf("accueil :\n%s", home)
+	for _, tab := range []string{"genres", "favourites", "playlists", "preview", "server", "lastfm", "backup"} {
+		if !strings.Contains(home, `href="/?p=`+tab+`"`) {
+			t.Fatalf("tab %s missing:\n%s", tab, home)
+		}
 	}
-	if set := do("GET", "/?p=reglages", nil).Body.String(); !strings.Contains(set, "Compte Last.fm") || !strings.Contains(set, "en attente d'envoi") {
-		t.Fatal("réglages")
+	if !strings.Contains(home, "Players found") || strings.Contains(home, "API secret") {
+		t.Fatalf("home:\n%s", home)
+	}
+	if set := do("GET", "/?p=lastfm", nil).Body.String(); !strings.Contains(set, "API secret") || !strings.Contains(set, "waiting to be sent") ||
+		strings.Contains(set, "Players found") {
+		t.Fatal("Last.fm tab")
 	}
 	if lg := do("GET", "/logo.png", nil); lg.Code != 200 || lg.Header().Get("Content-Type") != "image/png" {
 		t.Fatal("logo")
@@ -127,7 +136,7 @@ func TestArtistInfo(t *testing.T) {
 
 	tl := buildTestLibrary(t)
 	ls, _, store := scanLibrary(t, tl)
-	store.UpdateConfig(func(c *Config) { c.APIKey = "0123456789abcdef0123456789abcdef" })
+	store.UpdateConfig(func(c *Config) { c.APIKey, c.Lang = "0123456789abcdef0123456789abcdef", langFR })
 	ai := NewArtistInfo(t.TempDir(), store)
 	ls.info = ai
 	d, err := ai.Get(context.Background(), "Miles Davis")
@@ -136,7 +145,7 @@ func TestArtistInfo(t *testing.T) {
 	}
 	if d.Bio != "Miles Davis est un trompettiste." || d.BioLang != "fr" || d.Official != "https://www.milesdavis.com/" ||
 		d.LastfmURL != "https://www.last.fm/music/Miles+Davis" || len(d.Similar) != 3 {
-		t.Fatalf("données : %+v", d)
+		t.Fatalf("data: %+v", d)
 	}
 	ix := ls.Index()
 	var names []string
@@ -144,29 +153,34 @@ func TestArtistInfo(t *testing.T) {
 		names = append(names, a.Name)
 	}
 	if strings.Join(names, ",") != "Glenn Gould,Daft Punk" {
-		t.Fatalf("similaires présents : %v", names)
+		t.Fatalf("similar artists in library: %v", names)
 	}
+	// Cache: no new call.
 	// Cache : pas de nouvel appel.
 	calls := mbCalls
 	ai.Get(context.Background(), "miles davis")
 	if mbCalls != calls {
-		t.Fatal("cache non utilisé")
+		t.Fatal("cache not used")
 	}
+	// "Similar artists" row: built from the favourite artists.
 	// Rangée « Artistes similaires » : à partir des artistes favoris.
 	store.UpdateConfig(func(c *Config) { c.FavoriteArtists = []string{ix.ArtistByName("Miles Davis").Key} })
 	row := ls.similarRow(ix)
 	if len(row) != 2 || row[0].Name != "Glenn Gould" {
-		t.Fatalf("rangée : %v", row)
+		t.Fatalf("row: %v", row)
 	}
+	// Artist unknown to Last.fm: kept as not found, without an error.
 	// Artiste inconnu de Last.fm : gardé comme introuvable, sans erreur.
 	if d, err := ai.Get(context.Background(), "Inconnu"); err != nil || d.Found {
-		t.Fatalf("inconnu : %+v %v", d, err)
+		t.Fatalf("unknown: %+v %v", d, err)
 	}
 	if allowedLink("https://en.wikipedia.org/x") || allowedLink("javascript:alert(1)") || !allowedLink("https://a.b/") {
-		t.Fatal("filtre des liens")
+		t.Fatal("link filter")
 	}
 }
 
+// jsonQuote quotes s as a JSON string (backslashes and double quotes only).
+// jsonQuote met s entre guillemets JSON (barres obliques inverses et guillemets seulement).
 func jsonQuote(s string) string {
 	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
 	return `"` + r.Replace(s) + `"`

@@ -1,14 +1,21 @@
 package main
 
+// Minimal OpenHome client: SSDP discovery of players (DS/DSM…) and SOAP calls
+// to the Info, Time, Product and Playlist services.
+// OpenHome players expose these standard services; we read what is actually
+// playing rather than what the media server sent (players preload the next
+// track for gapless playback).
 // Client OpenHome minimal : découverte SSDP des lecteurs (DS/DSM…) et
-// appels SOAP aux services Info, Time et Product.
-// Les lecteurs OpenHome exposent ces services OpenHome standard ; on lit ce qui
+// appels SOAP aux services Info, Time, Product et Playlist.
+// Les lecteurs OpenHome exposent ces services standard ; on lit ce qui
 // est réellement joué plutôt que ce que le serveur de médias a envoyé
 // (les lecteurs préchargent la piste suivante pour le gapless).
 
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -26,6 +33,7 @@ const infoServiceType = "urn:av-openhome-org:service:Info:1"
 
 var httpClient = &http.Client{Timeout: 8 * time.Second}
 
+// Renderer describes an OpenHome player and its useful control URLs.
 // Renderer décrit un lecteur OpenHome et les URL de contrôle utiles.
 type Renderer struct {
 	Location   string
@@ -37,10 +45,19 @@ type Renderer struct {
 	TimeType   string
 	ProductURL string
 	ProdType   string
+	// Playlist service (play queue), used to save the queue as a server
+	// playlist from the settings page. Missing on some players.
+	// Service Playlist (file d'attente), pour l'enregistrer en playlist du
+	// serveur depuis la page de réglages. Absent sur certains lecteurs.
+	PlaylistURL  string
+	PlaylistType string
 }
 
-// DiscoverRenderers envoie un M-SEARCH SSDP et renvoie les URL de description
-// des appareils qui exposent le service OpenHome Info.
+// DiscoverRenderers sends an SSDP M-SEARCH (twice, as UDP may lose packets)
+// and returns the description URLs of devices exposing the OpenHome Info service.
+// DiscoverRenderers envoie un M-SEARCH SSDP (deux fois, UDP pouvant perdre des
+// paquets) et renvoie les URL de description des appareils qui exposent le
+// service OpenHome Info.
 func DiscoverRenderers(ctx context.Context, wait time.Duration) ([]string, error) {
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
 	if err != nil {
@@ -80,6 +97,8 @@ func DiscoverRenderers(ctx context.Context, wait time.Duration) ([]string, error
 	return out, nil
 }
 
+// headerValue returns a header of a raw SSDP reply (case-insensitive name).
+// headerValue renvoie un en-tête d'une réponse SSDP brute (nom sans casse).
 func headerValue(resp, name string) string {
 	for _, line := range strings.Split(resp, "\r\n") {
 		k, v, ok := strings.Cut(line, ":")
@@ -107,7 +126,10 @@ type xmlRoot struct {
 	Device  xmlDevice `xml:"device"`
 }
 
-// LoadRenderer lit la description UPnP et repère les services OpenHome.
+// LoadRenderer reads the UPnP description and finds the OpenHome services,
+// including those of embedded devices.
+// LoadRenderer lit la description UPnP et repère les services OpenHome,
+// y compris ceux des appareils imbriqués.
 func LoadRenderer(location string) (*Renderer, error) {
 	resp, err := httpClient.Get(location)
 	if err != nil {
@@ -115,7 +137,7 @@ func LoadRenderer(location string) (*Renderer, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("description %s : HTTP %d", location, resp.StatusCode)
+		return nil, fmt.Errorf("description %s: HTTP %d", location, resp.StatusCode)
 	}
 	var root xmlRoot
 	if err := xml.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&root); err != nil {
@@ -147,6 +169,10 @@ func LoadRenderer(location string) (*Renderer, error) {
 				if r.TimeURL == "" {
 					r.TimeURL, r.TimeType = ctrl.String(), s.ServiceType
 				}
+			case strings.HasPrefix(s.ServiceType, "urn:av-openhome-org:service:Playlist:"):
+				if r.PlaylistURL == "" {
+					r.PlaylistURL, r.PlaylistType = ctrl.String(), s.ServiceType
+				}
 			case strings.HasPrefix(s.ServiceType, "urn:av-openhome-org:service:Product:"):
 				if r.ProductURL == "" {
 					r.ProductURL, r.ProdType = ctrl.String(), s.ServiceType
@@ -159,7 +185,7 @@ func LoadRenderer(location string) (*Renderer, error) {
 	}
 	walk(root.Device)
 	if r.InfoURL == "" || r.TimeURL == "" {
-		return nil, errors.New("services OpenHome Info/Time absents")
+		return nil, errors.New("OpenHome Info/Time services missing")
 	}
 	if r.UDN == "" {
 		r.UDN = location
@@ -167,6 +193,7 @@ func LoadRenderer(location string) (*Renderer, error) {
 	return r, nil
 }
 
+// soapCall runs a SOAP action and returns the output arguments.
 // soapCall exécute une action SOAP et renvoie les arguments de sortie.
 func soapCall(ctrlURL, serviceType, action string, args map[string]string) (map[string]string, error) {
 	var b strings.Builder
@@ -194,11 +221,12 @@ func soapCall(ctrlURL, serviceType, action string, args map[string]string) (map[
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s : HTTP %d", action, resp.StatusCode)
+		return nil, fmt.Errorf("%s: HTTP %d", action, resp.StatusCode)
 	}
 	return parseSoapResponse(body, action+"Response")
 }
 
+// parseSoapResponse collects the child elements of <ActionResponse>.
 // parseSoapResponse récupère les éléments enfants de <ActionResponse>.
 func parseSoapResponse(body []byte, respName string) (map[string]string, error) {
 	dec := xml.NewDecoder(bytes.NewReader(body))
@@ -236,11 +264,87 @@ func parseSoapResponse(body []byte, respName string) (map[string]string, error) 
 		}
 	}
 	if !inResp {
-		return nil, errors.New("réponse SOAP inattendue")
+		return nil, errors.New("unexpected SOAP response")
 	}
 	return out, nil
 }
 
+// QueueEntry is one track of a player's play queue.
+// QueueEntry est un morceau de la file d'attente d'un lecteur.
+type QueueEntry struct {
+	URI  string
+	Meta TrackMeta
+}
+
+const maxQueueRead = 5000 // tracks read at most / morceaux lus au plus
+
+// Queue reads the player's play queue (OpenHome Playlist service: IdArray,
+// then ReadList in batches of 100 IDs), in order.
+// Queue lit la file d'attente du lecteur (service OpenHome Playlist :
+// IdArray, puis ReadList par paquets de 100 identifiants), dans l'ordre.
+func (r *Renderer) Queue() ([]QueueEntry, error) {
+	if r.PlaylistURL == "" {
+		return nil, errors.New("this player does not expose an OpenHome play queue")
+	}
+	m, err := soapCall(r.PlaylistURL, r.PlaylistType, "IdArray", nil)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(m["Array"]))
+	if err != nil {
+		return nil, fmt.Errorf("unreadable IdArray: %v", err)
+	}
+	// IdArray is a sequence of big-endian 32-bit IDs.
+	// IdArray est une suite d'identifiants 32 bits gros-boutistes.
+	var ids []string
+	for i := 0; i+4 <= len(raw) && len(ids) < maxQueueRead; i += 4 {
+		ids = append(ids, strconv.FormatUint(uint64(binary.BigEndian.Uint32(raw[i:])), 10))
+	}
+	var out []QueueEntry
+	for start := 0; start < len(ids); start += 100 {
+		end := min(start+100, len(ids))
+		res, err := soapCall(r.PlaylistURL, r.PlaylistType, "ReadList", map[string]string{"IdList": strings.Join(ids[start:end], " ")})
+		if err != nil {
+			return nil, err
+		}
+		entries, err := parseTrackList(res["TrackList"])
+		if err != nil {
+			return nil, err
+		}
+		// ReadList may return the entries in another order: restore
+		// the IdArray order.
+		// ReadList peut renvoyer les entrées dans un autre ordre : on
+		// remet celui de IdArray.
+		for _, id := range ids[start:end] {
+			if e, ok := entries[id]; ok {
+				out = append(out, e)
+			}
+		}
+	}
+	return out, nil
+}
+
+// parseTrackList reads <TrackList><Entry><Id/><Uri/><Metadata/></Entry>…
+// parseTrackList lit <TrackList><Entry><Id/><Uri/><Metadata/></Entry>…
+func parseTrackList(s string) (map[string]QueueEntry, error) {
+	var tl struct {
+		Entries []struct {
+			ID       string `xml:"Id"`
+			URI      string `xml:"Uri"`
+			Metadata string `xml:"Metadata"`
+		} `xml:"Entry"`
+	}
+	if err := xml.Unmarshal([]byte(s), &tl); err != nil {
+		return nil, fmt.Errorf("unreadable TrackList: %v", err)
+	}
+	out := map[string]QueueEntry{}
+	for _, e := range tl.Entries {
+		out[strings.TrimSpace(e.ID)] = QueueEntry{URI: strings.TrimSpace(e.URI), Meta: ParseDIDL(e.Metadata)}
+	}
+	return out, nil
+}
+
+// TimeState matches the OpenHome Time action.
 // TimeState correspond à l'action Time de OpenHome.
 type TimeState struct {
 	TrackCount int
@@ -248,6 +352,8 @@ type TimeState struct {
 	Seconds    int
 }
 
+// Time returns the track counter, duration and position of the player.
+// Time renvoie le compteur de pistes, la durée et la position du lecteur.
 func (r *Renderer) Time() (TimeState, error) {
 	m, err := soapCall(r.TimeURL, r.TimeType, "Time", nil)
 	if err != nil {
@@ -259,6 +365,7 @@ func (r *Renderer) Time() (TimeState, error) {
 	return TimeState{TrackCount: tc, Duration: d, Seconds: s}, nil
 }
 
+// Track returns the URI and DIDL-Lite metadata of the current track.
 // Track renvoie l'URI et les métadonnées DIDL-Lite de la piste en cours.
 func (r *Renderer) Track() (string, string, error) {
 	m, err := soapCall(r.InfoURL, r.InfoType, "Track", nil)
@@ -268,6 +375,8 @@ func (r *Renderer) Track() (string, string, error) {
 	return m["Uri"], m["Metadata"], nil
 }
 
+// SourceType returns the type of the active source (Playlist, Radio, Spotify…).
+// It returns "" when the Product service is not available.
 // SourceType renvoie le type de la source active (Playlist, Radio, Spotify…).
 // Renvoie "" si le service Product n'est pas disponible.
 func (r *Renderer) SourceType() string {
@@ -285,6 +394,7 @@ func (r *Renderer) SourceType() string {
 	return src["Type"]
 }
 
+// Room returns the room name configured in the player.
 // Room renvoie le nom de pièce configuré dans le lecteur.
 func (r *Renderer) Room() string {
 	if r.ProductURL == "" {
@@ -297,7 +407,8 @@ func (r *Renderer) Room() string {
 	return m["Room"]
 }
 
-// TrackMeta : informations utiles pour Last.fm.
+// TrackMeta holds the information useful for Last.fm.
+// TrackMeta regroupe les informations utiles pour Last.fm.
 type TrackMeta struct {
 	Title       string
 	Artist      string
@@ -306,7 +417,10 @@ type TrackMeta struct {
 	TrackNumber string
 }
 
+// ParseDIDL extracts title / artist / album from a DIDL-Lite fragment.
+// The artist is the performer, otherwise the creator, otherwise the album artist.
 // ParseDIDL extrait titre / artiste / album d'un fragment DIDL-Lite.
+// L'artiste est l'interprète, sinon le créateur, sinon l'artiste de l'album.
 func ParseDIDL(didl string) TrackMeta {
 	var m TrackMeta
 	if strings.TrimSpace(didl) == "" {
@@ -375,8 +489,10 @@ func ParseDIDL(didl string) TrackMeta {
 	if m.Artist == "" {
 		m.Artist = m.AlbumArtist
 	}
-	// Certaines vues de Gerbera (« All - full name ») titrent les pistes
-	// « Artiste - Titre » : on retire le préfixe pour Last.fm.
+	// Some media servers title tracks "Artist - Title": strip the prefix
+	// for Last.fm.
+	// Certains serveurs de médias titrent les pistes « Artiste - Titre » :
+	// on retire le préfixe pour Last.fm.
 	if m.Artist != "" {
 		if rest, ok := strings.CutPrefix(m.Title, m.Artist+" - "); ok && rest != "" {
 			m.Title = rest
