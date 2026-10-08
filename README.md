@@ -1,123 +1,86 @@
 # Musique NAS
 
-A music server for QNAP NAS (ARM 64-bit, QTS 5.x), built for OpenHome network players and their control app. It serves a local music library, shows it as a home screen in rows with favourites and search, and scrobbles what you play to Last.fm.
+A lightweight music server for NAS devices, designed for OpenHome / UPnP network players
+(Linn DS and compatible). It indexes a local FLAC/MP3 library, serves it over UPnP with
+reliable cover art and quality badges, and scrobbles what is played to Last.fm.
 
-It ships as a native QTS package (`.qpkg`), with no container and no dependency on other apps. Everything runs in one small program written in Go with the standard library only.
+One Go program (standard library only) is shared by two native packages:
+
+| Edition | Target | Package | Sources |
+|---|---|---|---|
+| QNAP | ARM 64-bit, QTS 5.x (e.g. TS-432X) | `.qpkg` | [`Serveur-Musique-QNAP-sources`](Serveur-Musique-QNAP-sources) |
+| Synology | x86_64, DSM 7.0 or later (e.g. DS220+) | `.spk` | [`Serveur-Musique-Synology-sources`](Serveur-Musique-Synology-sources) |
 
 ## Features
 
-**Music server**
-- UPnP/DLNA media server (ContentDirectory with browse and search), visible to any OpenHome or UPnP player.
-- Rows interface of the control app ("Media Endpoint"): favourite albums, artists and genres, recently added, most played, recently played, Last.fm loved tracks, similar artists, then Albums, Artists, Genres and Playlists. Empty rows are hidden.
-- Search by album, artist, track and composer.
-- Formats: FLAC, ALAC, AAC, MP3, WAV, AIFF and DSF. Files are sent untouched (bit-perfect, no transcoding), with HTTP range support for seeking.
-- Fast incremental indexing: unchanged files are not read again, and new albums are picked up straight away through inotify.
-- "Recently added" uses the date the files were created on the disk.
-- Duplicate genres are merged for display (for example "Electronic", "Electronica" and "Electro"). The files themselves are never modified.
-- Compilations ("Various Artists", "VA", "V/A"...) are grouped by folder under a single "Various Artists" entry.
-- Covers are reduced to 800 px. A quality badge (CD, Hi-Res Audio or MP3, with the resolution such as 24/96 or DSD64) is drawn in the bottom-right corner.
-
-**Last.fm**
-- Scrobbling for the OpenHome players on the network: a track counts once half of it (or 4 minutes) has been played. Plays made while offline are queued for up to 14 days.
-- "Most played" and "Recently played" combine your Last.fm history with the plays counted on your players.
-- Loved tracks row, artist biographies and similar artists present on the NAS.
-- Official artist websites come from MusicBrainz.
-- Artist photos come from Deezer. Only the artist's name is sent.
-
-**Settings page** (port 8790, also opened from the App Center)
-- English or French. The choice also applies to the row and folder names in the control app.
-- Tabs:
-  - **Players**: the players found and what they are playing.
-  - **Genres and photos**: the nine favourite genre tiles and the artist photo service.
-  - **Favourites**: favourite albums and artists, with each artist's biography.
-  - **Playlists**: create, rename, delete and reorder playlists, add albums or tracks, and save a player's queue as a playlist.
-  - **Preview**: what each row will show.
-  - **Server**: server name, music folder, indexing, memory and CPU use, logs.
-  - **Last.fm**: the Last.fm account.
-  - **Backup**: download and restore of all settings as a JSON file.
-- Restricted to the local network, with CSRF protection on every form. Secrets are never shown again.
+- UPnP/DLNA media server, browsable by genre, artist, album, recently added and favourites.
+- Cover art from `cover`/`folder` image files (jpg, jpeg, png), with quality badges
+  (MP3, CD, Studio Master) and the sample rate / bit depth.
+- Compilations grouped under "Various artists".
+- Search and favourite rows through the JSON media endpoint used by OpenHome control apps.
+- Last.fm scrobbling, top and recent tracks, loved tracks, artist biography and similar artists.
+- Official artist website through MusicBrainz.
+- Settings page (English / French) on port 8790: server name, music folder, network
+  interface, Last.fm account, playlists (including saving a player's queue),
+  settings backup and restore, diagnostics.
 
 ## Installation
 
-1. Download `MusiqueServeur_<version>_arm_64.qpkg`.
-2. In QTS, open App Center, then Settings (gear icon), then General. Tick **"Allow installation of applications without a valid digital signature"**. The package is not signed by QNAP.
-3. In App Center, click **Install manually** (the icon next to the gear) and choose the `.qpkg` file.
-4. Open `http://<NAS-address>:8790/` and check the music folder in the **Server** tab.
-5. Make sure the `httpdusr` account can read your music shared folder. Otherwise the service starts as root and says so in the QTS system log.
+Both packages are unsigned and installed manually.
 
-The server then appears as a music source called **Musique NAS** in the control app.
+### QNAP (QTS 5.x)
 
-### Last.fm
+1. App Center > Settings > General: allow installation of applications without a valid digital signature.
+2. App Center > Install manually: choose `install/MusiqueServeur_<version>_arm_64.qpkg`.
+3. Open `http://<nas-address>:8790` and choose the music folder.
 
-1. Create an API key at https://www.last.fm/api/account/create. Any application name will do; leave the Callback URL empty.
-2. On the settings page, open the **Last.fm** tab and paste the key and the secret. Click **Save**, then **Connect to Last.fm** and allow access.
+### Synology (DSM 7)
 
-The key and secret are stored on the NAS only, in a file readable by the service account alone (mode 0600).
+1. Package Center > Manual install: choose `install/MusiqueServeur_<version>_x86_64.spk`.
+2. Control Panel > Shared Folder > (music folder) > Edit > Permissions > System internal user:
+   give **MusiqueServeur** read access.
+3. Open `http://<nas-address>:8790` and choose the music folder.
+
+Details for each system: see the README of each sources folder.
+
+## Last.fm
+
+Create an API account at <https://www.last.fm/api/account/create>, then paste the API key and
+shared secret on the settings page and authorise the account. Credentials are stored on the NAS only.
 
 ## Network ports
 
 | Port | Use |
 |---|---|
-| 8790/TCP | settings page |
-| 49494/TCP | UPnP server (descriptions, browsing, audio files, covers) |
-| 49495/TCP | events for the control app |
+| 8790/TCP | Settings page |
+| 49494/TCP | UPnP server (descriptions, browsing, audio, cover art) |
+| 49495/TCP | UPnP events |
 | 1900/UDP | SSDP discovery |
 
-## Building from source
+## Building
 
-You need Go 1.24 or later, Python 3 and a POSIX shell.
+Requirements: Go, Python 3, `tar`, a POSIX shell. Each edition builds in one command:
 
 ```sh
-./build.sh                 # runs the tests, then builds dist/MusiqueServeur_<version>_arm_64.qpkg
-SKIP_TESTS=1 ./build.sh    # build only
+cd Serveur-Musique-QNAP-sources && ./build.sh      # version: package/control/qpkg.cfg (QPKG_VER)
+cd Serveur-Musique-Synology-sources && ./build.sh  # version: package/INFO (version)
 ```
 
-The version is read from `package/control/qpkg.cfg` (`QPKG_VER`) only.
+The build runs `go vet` and the tests, cross-compiles a static binary and writes the package to `dist/`.
+Ready-to-install packages for the current version are in [`install/`](install).
 
-To run the tests on their own: `cd scrobbler && go test ./...`. The audio files the tests need are generated by the tests themselves.
+## Repository layout
 
-### Layout
+```
+install/                           Ready-to-install packages (.qpkg, .spk)
+Serveur-Musique-QNAP-sources/      QNAP edition: build.sh, package/ (control, scripts, icons, licences), scrobbler/ (Go)
+Serveur-Musique-Synology-sources/  Synology edition: build.sh, package/ (INFO, scripts, conf, icons, licences), scrobbler/ (Go)
+```
 
-| Path | Content |
-|---|---|
-| `scrobbler/` | the Go program (package `main`) |
-| `scrobbler/page.html` | template of the settings page |
-| `scrobbler/i18n.go`, `i18n_fr.go` | language selection and French translations; every text is written in British English in the code |
-| `scrobbler/badges/` | badge logos and the pre-rendered badge font |
-| `scrobbler/icons/` | server icons (32, 48 and 120 px) |
-| `package/musique.sh` | QTS service script and supervisor: restarts the program if it stops and applies the requests made from the page |
-| `package/control/` | `qpkg.cfg` and `package_routines` (QDK metadata and install routine) |
-| `package/mkqpkg.py`, `package/header.tpl` | assembly of the `.qpkg` file in the QDK 2.x format |
-| `package/qinstall.sh` | standard QNAP QDK installer, unchanged |
-| `package/tools/` | su-exec and the musl loader (Alpine Linux), used to run the program as an unprivileged account |
-| `package/icons/` | App Center icons |
-| `package/build-tools/badge_font.py` | regenerates `badges/font.png` and `font.json` from Inter Bold (needs Pillow) |
-| `package/licenses/` | notices (English and French), licences and the list of third-party components |
-
-Main Go files:
-
-| File | Role |
-|---|---|
-| `main.go` | start-up, command-line options, wiring of the services |
-| `scan.go`, `tags.go`, `watch.go` | indexing, tag and embedded cover reading, folder watching |
-| `library.go`, `libservice.go` | in-memory library (albums, artists, genres, playlists) and file serving |
-| `upnp.go`, `ssdp.go`, `cds.go` | UPnP device, discovery and ContentDirectory |
-| `mediaendpoint.go`, `eventserver.go` | rows interface and events for the control app |
-| `quality.go`, `art.go` | quality badges and cover cache |
-| `openhome.go`, `tracker.go`, `lastfm.go`, `store.go` | player tracking, scrobbling rules, Last.fm API, settings and queue |
-| `top.go`, `artistinfo.go`, `photos.go` | rankings, loved tracks, biographies, similar artists, photos |
-| `playlists.go` | server playlists |
-| `web.go`, `webapp.go`, `webpl.go`, `diag.go` | settings page, favourites, playlists, backup, server state |
-
-## Third-party components
-
-- su-exec 0.3 and the musl 1.2.6 loader, both MIT licence, taken from Alpine Linux 3.24. They are isolated in the package folder.
-- Inter Bold 4.0 (SIL Open Font Licence 1.1). Only the characters used for the badge resolution are pre-rendered.
-- Badge logos: trademarks of their respective owners.
-- `qinstall.sh`: QNAP QDK installer (GPL-2.0).
-
-See `package/licenses/COMPONENTS.tsv`.
+The `scrobbler/` Go code is identical in both editions.
 
 ## Licence
 
-MIT. See `package/licenses/MIT.txt`.
+MIT, see `package/licenses/MIT.txt`. Third-party components (Inter font, OFL 1.1) are listed in
+`package/licenses/COMPONENTS.tsv`. Linn, QNAP, Synology and Last.fm are trademarks of their owners;
+this project is not affiliated with them.
