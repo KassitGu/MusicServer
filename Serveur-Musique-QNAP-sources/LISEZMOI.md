@@ -1,45 +1,82 @@
 # Musique NAS
 
-Serveur de musique pour NAS QNAP (ARM 64 bits, QTS 5.x), conçu pour les lecteurs réseau OpenHome et leur application de contrôle. Il sert une bibliothèque musicale locale, la présente en accueil par rangées avec favoris et recherche, et envoie vos écoutes à Last.fm.
+Serveur de musique pour NAS QNAP (ARM ou Intel, QTS 5, ou QTS 4.2 à 4.5), conçu pour les lecteurs réseau OpenHome et leur application de contrôle. Il sert une bibliothèque musicale locale, la présente en accueil par rangées avec favoris et recherche, et envoie vos écoutes à Last.fm.
 
 Il est livré en paquet QTS natif (`.qpkg`), sans conteneur ni dépendance à d'autres applications. Tout tient dans un seul petit programme écrit en Go, avec la seule bibliothèque standard.
 
-## Fonctions
+## Aide
 
-**Serveur de musique**
-- Serveur multimédia UPnP/DLNA (ContentDirectory avec navigation et recherche), visible par tout lecteur OpenHome ou UPnP.
-- Interface en rangées de l'application de contrôle (« Media Endpoint ») : albums, artistes et genres favoris, derniers ajoutés, les plus écoutés, écoutés récemment, coups de cœur Last.fm, artistes similaires, puis Albums, Artistes, Genres et Playlists. Les rangées vides sont masquées.
-- Recherche par album, artiste, morceau et compositeur.
-- Formats : FLAC, ALAC, AAC, MP3, WAV, AIFF et DSF. Les fichiers sont envoyés tels quels (bit à bit, sans transcodage), avec prise en charge des plages HTTP pour l'avance rapide.
-- Indexation incrémentale rapide : un fichier inchangé n'est pas relu, et les nouveaux albums sont vus aussitôt grâce à inotify.
-- « Derniers ajoutés » utilise la date de création des fichiers sur le disque.
-- Les genres en double sont fusionnés à l'affichage (par exemple « Electronic », « Electronica » et « Electro »). Les fichiers ne sont jamais modifiés.
-- Les compilations (« Various Artists », « VA », « V/A »…) sont regroupées par dossier sous une seule entrée « Artistes divers ».
-- Les pochettes sont réduites à 800 px. Un badge de qualité est posé en bas à droite : CD, Hi-Res Audio ou MP3, avec la résolution (par exemple 24/96 ou DSD64).
+### Ce que fait le serveur
 
-**Last.fm**
-- Scrobbling des lecteurs OpenHome du réseau : un morceau compte dès que la moitié (ou 4 minutes) a été jouée. Les écoutes faites sans Internet sont gardées jusqu'à 14 jours.
+Musique NAS fait du NAS une source de musique pour les lecteurs réseau OpenHome et leur application de contrôle. Il lit le dossier de musique, construit une bibliothèque d'albums, d'artistes, de genres et de playlists, et s'annonce sur le réseau local sous le nom choisi dans l'onglet **Serveur** (par défaut : **Musique NAS**). Les lecteurs jouent ensuite les fichiers directement depuis le NAS.
+
+Il suit aussi ce que jouent les lecteurs, pour envoyer les écoutes à Last.fm (scrobbling) et construire les rangées « Les plus écoutés » et « Écoutés récemment ».
+
+Tout tourne dans un seul programme sur le NAS. Rien ne sort du réseau local, sauf les demandes à Last.fm, la recherche des sites officiels des artistes sur MusicBrainz et, si elle est activée, la recherche des photos d'artistes sur Deezer (le nom de l'artiste seulement).
+
+### Dans l'application de contrôle
+
+- **Accueil en rangées** : genres favoris, albums et artistes favoris, derniers ajoutés, les plus écoutés, écoutés récemment, coups de cœur Last.fm et artistes similaires, puis Albums, Artistes, Genres et Playlists. Une rangée vide est masquée.
+- **Recherche** par album, artiste, titre de morceau et compositeur.
+- **Pochettes** réduites à 800 px. Un badge de qualité est posé en bas à droite : MP3, CD, ou Hi-Res Audio avec la résolution (par exemple 24/96 ou DSD64).
+- **Fichiers envoyés tels quels** : aucun transcodage, le lecteur reçoit le fichier d'origine (bit à bit). Formats pris en charge : FLAC, ALAC, AAC, MP3, WAV, AIFF et DSF.
+- **Genres** écrits différemment dans les étiquettes (« Electronic », « Electronica », « Electro »…) : affichés comme un seul genre. Les fichiers ne sont jamais modifiés.
+- **Compilations** (« Various Artists », « VA », « V/A »…) : regroupées par dossier sous une seule entrée « Artistes divers ».
+- **Derniers ajoutés** utilise la date de création des fichiers sur le disque : un vieil album copié aujourd'hui arrive en tête.
+- **Mode classique** (onglet Aperçu) : dossiers UPnP simples au lieu des rangées, pour une application de contrôle qui affiche mal les rangées.
+
+### Page de réglages
+
+La page est à l'adresse `http://<adresse-du-NAS>:8790/`. Elle ne répond que sur le réseau local. Elle est en anglais ou en français (boutons EN / FR en haut) ; le choix s'applique aussi aux noms des rangées et des dossiers dans l'application de contrôle.
+
+- **Lecteurs** : les lecteurs OpenHome trouvés sur le réseau (recherchés toutes les 5 minutes), ce que chacun joue et depuis combien de temps. Le réglage **Radio infinie** est aussi ici.
+- **Genres et photos** : les neuf tuiles de genres de l'accueil, et le service utilisé pour les photos d'artistes.
+- **Favoris** : albums et artistes favoris affichés sur l'accueil, avec la biographie et le site officiel de chaque artiste.
+- **Playlists** : créer, renommer, supprimer et réordonner les playlists du serveur, y ajouter des albums ou des morceaux, ou enregistrer la file d'attente d'un lecteur comme playlist.
+- **Aperçu** : ce que montrera chaque rangée de l'accueil, et le choix du mode classique.
+- **Serveur** : nom affiché dans l'application de contrôle, dossier de musique, indexation (avec un bouton pour relancer), mémoire et processeur utilisés, journaux.
+- **Last.fm** : le compte Last.fm utilisé pour le scrobbling.
+- **Sauvegarde** : télécharger tous les réglages dans un fichier JSON, et les restaurer.
+
+### Radio infinie
+
+Quand elle est active, un lecteur qui arrive au dernier morceau de sa file ne s'arrête pas : le serveur ajoute la suite.
+
+- **Morceaux** : environ cinq morceaux, chacun d'un album différent.
+- **Albums** : un album entier.
+
+La suite est choisie d'après les derniers morceaux de la file : le même artiste, les artistes que Last.fm juge similaires, les mêmes genres et les mêmes tags Last.fm (jazz, shoegaze, post-bop…). Les albums et morceaux joués ou ajoutés récemment ne sont pas repris. Sans clé API Last.fm, seuls l'artiste et les genres comptent.
+
+La radio n'agit que si le lecteur utilise sa source Playlist, est en lecture, sans répétition ni lecture aléatoire, et si le dernier morceau vient de ce serveur. Elle ajoute les morceaux avec l'action standard OpenHome « Insert ». Si un lecteur refuse, la raison s'affiche sous son nom dans l'onglet **Lecteurs**.
+
+Quand la radio est activée, le serveur cherche en tâche de fond les tags Last.fm et les artistes similaires de tous les artistes de la bibliothèque. La première passe prend du temps sur une grande bibliothèque ; pendant ce temps, la radio fonctionne avec ce qui est déjà connu.
+
+### Last.fm
+
+- Un morceau est envoyé à Last.fm dès que la moitié, ou 4 minutes, a été jouée. Les écoutes faites sans Internet sont gardées et envoyées plus tard (jusqu'à 14 jours).
 - « Les plus écoutés » et « Écoutés récemment » combinent l'historique Last.fm et les écoutes comptées sur vos lecteurs.
-- Rangée des coups de cœur, biographies d'artistes et artistes similaires présents sur le NAS.
-- Les sites officiels des artistes viennent de MusicBrainz.
-- Les photos d'artistes viennent de Deezer. Seul le nom de l'artiste est envoyé.
+- Le compte donne aussi la rangée des coups de cœur, les biographies d'artistes et les artistes similaires présents sur le NAS.
+- La clé API et le secret se saisissent uniquement sur la page de réglages et sont gardés sur le NAS dans un fichier lisible par le seul service. Ils ne sont jamais réaffichés.
 
-**Page de réglages** (port 8790, ouverte aussi depuis l'App Center)
-- En anglais ou en français. Le choix s'applique aussi aux noms des rangées et dossiers dans l'application de contrôle.
-- Onglets :
-  - **Lecteurs** : les lecteurs trouvés et ce qu'ils jouent.
-  - **Genres et photos** : les neuf tuiles de genres favoris et le service de photos d'artistes.
-  - **Favoris** : albums et artistes favoris, avec la biographie de chaque artiste.
-  - **Playlists** : créer, renommer, supprimer et réordonner des playlists, y ajouter des albums ou des morceaux, et enregistrer la file d'attente d'un lecteur en playlist.
-  - **Aperçu** : ce que montrera chaque rangée.
-  - **Serveur** : nom diffusé, dossier musique, indexation, mémoire et processeur utilisés, journaux.
-  - **Last.fm** : le compte Last.fm.
-  - **Sauvegarde** : téléchargement et restauration de tous les réglages dans un fichier JSON.
-- Accès limité au réseau local, protection CSRF sur chaque formulaire. Les secrets ne sont jamais réaffichés.
+### Indexation
+
+Le dossier de musique est indexé au démarrage du serveur. Les fichiers inchangés ne sont pas relus : les indexations suivantes sont rapides. Les nouveaux albums sont vus aussitôt (le dossier est surveillé). Les fichiers illisibles sont comptés dans l'onglet **Serveur**, avec la dernière erreur.
+
+### Confidentialité et sécurité
+
+- La page de réglages ne répond que sur le réseau local, et chaque formulaire est protégé contre les demandes venant d'autres sites.
+- Le programme tourne sous un compte non privilégié dès que ce compte peut lire le dossier de musique (sinon il le signale dans le journal système). Les fichiers de musique ne sont jamais modifiés.
+
+### En cas de problème
+
+- **Le serveur n'apparaît pas dans l'application de contrôle** : vérifier que le NAS et le lecteur sont sur le même réseau, et que les ports 49494, 49495 (TCP) et 1900 (UDP) ne sont pas bloqués.
+- **La bibliothèque est vide** : vérifier le dossier de musique dans l'onglet **Serveur**, et que le compte du service peut le lire.
+- **Un lecteur manque dans l'onglet Lecteurs** : seuls les lecteurs OpenHome sont suivis ; un lecteur qui vient d'être allumé peut mettre jusqu'à 5 minutes à apparaître.
+- **« Le superviseur ne tourne plus »** : arrêter puis relancer l'application dans le gestionnaire d'applications du NAS.
 
 ## Installation
 
-1. Télécharger `MusiqueServeur_<version>_arm_64.qpkg`.
+1. Télécharger le fichier de votre version de QTS : `MusiqueServeur_<version>_QTS5.qpkg` pour QTS 5, `MusiqueServeur_<version>_QTS4.qpkg` pour QTS 4.2 à 4.5 (la version de QTS est indiquée dans Panneau de configuration > État du système). Chaque fichier refuse de s'installer sur l'autre version de QTS. Il contient le programme pour chaque famille de processeur de cette version de QTS (QTS 5 : ARM et Intel 64 bits, ARM 32 bits ; QTS 4 : aussi Intel 32 bits) et garde celui de votre NAS. Les deux portent le même nom d'application : les réglages sont conservés en passant de l'un à l'autre.
 2. Dans QTS, ouvrir l'App Center, puis Paramètres (roue dentée), puis Général. Cocher **« Autoriser l'installation d'applications sans signature numérique valide »**. Le paquet n'est pas signé par QNAP.
 3. Dans l'App Center, cliquer sur **Installer manuellement** (l'icône à côté de la roue) et choisir le fichier `.qpkg`.
 4. Ouvrir `http://<adresse-du-NAS>:8790/` et vérifier le dossier musique dans l'onglet **Serveur**.
@@ -68,11 +105,11 @@ La clé et le secret restent sur le NAS, dans un fichier lisible par le seul com
 Il faut Go 1.24 ou plus récent, Python 3 et un shell POSIX.
 
 ```sh
-./build.sh                 # lance les tests, puis construit dist/MusiqueServeur_<version>_arm_64.qpkg
+./build.sh                 # lance les tests, puis construit dist/MusiqueServeur_<version>_QTS5.qpkg et _QTS4.qpkg
 SKIP_TESTS=1 ./build.sh    # construction seule
 ```
 
-La version est lue uniquement dans `package/control/qpkg.cfg` (`QPKG_VER`).
+La version est lue uniquement dans `package/control/qpkg.cfg` (`QPKG_VER`). Les limites QTS et les familles de processeur de chaque édition sont listées en tête de `build.sh`.
 
 Pour lancer les tests seuls : `cd scrobbler && go test ./...`. Les fichiers audio nécessaires aux tests sont fabriqués par les tests eux-mêmes.
 
@@ -80,12 +117,15 @@ L'organisation des fichiers, le rôle de chaque fichier Go et les composants tie
 
 ## Composants tiers
 
-- su-exec 0.3 et le chargeur musl 1.2.6, licence MIT, repris d'Alpine Linux 3.24. Ils restent isolés dans le dossier du paquet.
 - Inter Bold 4.0 (SIL Open Font Licence 1.1). Seuls les caractères de la résolution des badges sont pré-rendus.
 - Logos des badges : marques de leurs propriétaires.
 - `qinstall.sh` : installeur QDK de QNAP (GPL-2.0).
 
 Voir `package/licenses/COMPONENTS.tsv`.
+
+## Soutien
+
+Musique NAS est gratuit. S'il vous est utile, vous pouvez offrir un café à son auteur : https://buymeacoffee.com/guzkassit
 
 ## Licence
 

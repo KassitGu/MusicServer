@@ -68,6 +68,21 @@ func tr(lang, s string) string {
 	return s
 }
 
+// trDetail translates a message made of an English key followed by a
+// technical detail (an error from the system or the network), which stays
+// as it is.
+// trDetail traduit un message fait d'une clé anglaise suivie d'un détail
+// technique (erreur du système ou du réseau), qui reste tel quel.
+func trDetail(lang, key, detail string) string {
+	if detail == "" {
+		return tr(lang, key)
+	}
+	if lang == langFR {
+		return tr(lang, key) + " : " + detail
+	}
+	return key + ": " + detail
+}
+
 // trf translates an English format string, then formats it.
 // trf traduit une chaîne de format anglaise, puis la met en forme.
 func trf(lang, format string, args ...any) string {

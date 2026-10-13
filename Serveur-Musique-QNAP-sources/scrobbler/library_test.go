@@ -1021,7 +1021,7 @@ func TestHomeSettingsPage(t *testing.T) {
 	// Genres proposés et tuiles gardant leur valeur, contenu échappé.
 	body := get("/?p=genres", "")
 	if !strings.Contains(body, `<option value="jazz" selected>Jazz (1)</option>`) || !strings.Contains(body, `<option value="classique" selected>`) ||
-		strings.Contains(body, "TIDAL") || strings.Contains(body, "Qobuz") || !strings.Contains(body, `src="/logo.png"`) {
+		!strings.Contains(body, `src="/logo.png"`) {
 		t.Fatalf("page:\n%s", body)
 	}
 	if body := get("/?p=preview", ""); !strings.Contains(body, "Kind of Blue (Miles Davis)") {
@@ -1128,5 +1128,76 @@ func TestCompilations(t *testing.T) {
 	}
 	if n > 1 {
 		t.Fatalf("%d artists \"%s\"", n, ix.various)
+	}
+}
+
+// TestAddedWithoutBirthTime: without creation dates (old kernel), the first
+// indexing uses the modification time and later ones the date the file is
+// first seen.
+// TestAddedWithoutBirthTime : sans date de création (noyau ancien), la
+// première indexation prend la date de modification et les suivantes la
+// date à laquelle le fichier est vu pour la première fois.
+func TestAddedWithoutBirthTime(t *testing.T) {
+	saved := birthTime
+	birthTime = func(string) int64 { return 0 }
+	defer func() { birthTime = saved }()
+	tl := buildTestLibrary(t)
+	old := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	filepath.WalkDir(tl.root, func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			os.Chtimes(p, old, old)
+		}
+		return nil
+	})
+	sc := NewScanner(tl.root, filepath.Join(tl.data, "index.json"))
+	now := time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)
+	sc.clock = func() time.Time { return now }
+	tracks, _, err := sc.Scan(context.Background())
+	if err != nil || len(tracks) == 0 {
+		t.Fatal(err)
+	}
+	for _, tk := range tracks {
+		if tk.Added != old.Unix() {
+			t.Fatalf("first indexing: %s added %d", tk.Path, tk.Added)
+		}
+	}
+	src := filepath.Join(tl.root, "Miles Davis", "Kind of Blue", "02 Freddie Freeloader.flac")
+	b, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(tl.root, "Miles Davis", "Kind of Blue", "99 Copy.flac")
+	os.WriteFile(dst, b, 0o644)
+	os.Chtimes(dst, old, old)
+	tracks, _, err = sc.Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tk := range tracks {
+		want := old.Unix()
+		if tk.Path == dst {
+			want = now.Unix()
+		}
+		if tk.Added != want {
+			t.Fatalf("second indexing: %s added %d, want %d", tk.Path, tk.Added, want)
+		}
+	}
+}
+
+// TestPageStatusLanguage: problem texts shown on the page follow the language.
+// TestPageStatusLanguage : les textes de problème affichés sur la page suivent la langue.
+func TestPageStatusLanguage(t *testing.T) {
+	s := &SSDPAnnouncer{}
+	s.setWhere("eth1 (10.0.0.2:49494)", "announcements only", "bind: permission denied")
+	if got := s.Where(langFR); got != "eth1 (10.0.0.2:49494), annonces seules : bind: permission denied" {
+		t.Fatalf("FR: %q", got)
+	}
+	if got := s.Where(langEN); got != "eth1 (10.0.0.2:49494), announcements only: bind: permission denied" {
+		t.Fatalf("EN: %q", got)
+	}
+	ls := &LibraryService{}
+	ls.setWatch(0, "system watch limit reached (max_user_watches)", "")
+	if _, got := ls.WatchStatus(langFR); got != "limite de surveillance du système atteinte (max_user_watches)" {
+		t.Fatalf("watch FR: %q", got)
 	}
 }

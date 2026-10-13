@@ -193,16 +193,21 @@ func LoadRenderer(location string) (*Renderer, error) {
 	return r, nil
 }
 
-// soapCall runs a SOAP action and returns the output arguments.
-// soapCall exécute une action SOAP et renvoie les arguments de sortie.
-func soapCall(ctrlURL, serviceType, action string, args map[string]string) (map[string]string, error) {
+// soapCall runs a SOAP action and returns the output arguments. args are
+// name/value pairs, sent in that order: UPnP stacks may expect the order of
+// the service description (Playlist Insert: AfterId, Uri, Metadata).
+// soapCall exécute une action SOAP et renvoie les arguments de sortie. args
+// est une suite de paires nom/valeur, envoyées dans cet ordre : les piles
+// UPnP peuvent exiger l'ordre de la description du service (Insert de
+// Playlist : AfterId, Uri, Metadata).
+func soapCall(ctrlURL, serviceType, action string, args ...string) (map[string]string, error) {
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>`)
 	fmt.Fprintf(&b, `<u:%s xmlns:u="%s">`, action, serviceType)
-	for k, v := range args {
-		fmt.Fprintf(&b, "<%s>", k)
-		xml.EscapeText(&b, []byte(v))
-		fmt.Fprintf(&b, "</%s>", k)
+	for i := 0; i+1 < len(args); i += 2 {
+		fmt.Fprintf(&b, "<%s>", args[i])
+		xml.EscapeText(&b, []byte(args[i+1]))
+		fmt.Fprintf(&b, "</%s>", args[i])
 	}
 	fmt.Fprintf(&b, `</u:%s></s:Body></s:Envelope>`, action)
 	req, err := http.NewRequest(http.MethodPost, ctrlURL, strings.NewReader(b.String()))
@@ -278,15 +283,19 @@ type QueueEntry struct {
 
 const maxQueueRead = 5000 // tracks read at most / morceaux lus au plus
 
+// errNoPlayQueue: the player has no OpenHome Playlist service.
+// errNoPlayQueue : le lecteur n'a pas de service OpenHome Playlist.
+var errNoPlayQueue = errors.New("this player does not expose an OpenHome play queue")
+
 // Queue reads the player's play queue (OpenHome Playlist service: IdArray,
 // then ReadList in batches of 100 IDs), in order.
 // Queue lit la file d'attente du lecteur (service OpenHome Playlist :
 // IdArray, puis ReadList par paquets de 100 identifiants), dans l'ordre.
 func (r *Renderer) Queue() ([]QueueEntry, error) {
 	if r.PlaylistURL == "" {
-		return nil, errors.New("this player does not expose an OpenHome play queue")
+		return nil, errNoPlayQueue
 	}
-	m, err := soapCall(r.PlaylistURL, r.PlaylistType, "IdArray", nil)
+	m, err := soapCall(r.PlaylistURL, r.PlaylistType, "IdArray")
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +312,7 @@ func (r *Renderer) Queue() ([]QueueEntry, error) {
 	var out []QueueEntry
 	for start := 0; start < len(ids); start += 100 {
 		end := min(start+100, len(ids))
-		res, err := soapCall(r.PlaylistURL, r.PlaylistType, "ReadList", map[string]string{"IdList": strings.Join(ids[start:end], " ")})
+		res, err := soapCall(r.PlaylistURL, r.PlaylistType, "ReadList", "IdList", strings.Join(ids[start:end], " "))
 		if err != nil {
 			return nil, err
 		}
@@ -344,6 +353,100 @@ func parseTrackList(s string) (map[string]QueueEntry, error) {
 	return out, nil
 }
 
+// PlaylistState is what the endless radio needs to know about the play
+// queue (OpenHome Playlist service).
+// PlaylistState : ce que la radio infinie doit savoir de la file d'attente
+// (service OpenHome Playlist).
+type PlaylistState struct {
+	IDs     []uint32 // queue order / ordre de la file
+	Current uint32   // track being played (0: none) / morceau en cours (0 : aucun)
+	Playing bool     // Playing or Buffering
+	Repeat  bool
+	Shuffle bool
+}
+
+// PlaylistState reads the queue IDs, the current track and the play modes.
+// PlaylistState lit les identifiants de la file, le morceau en cours et les
+// modes de lecture.
+func (r *Renderer) PlaylistState() (PlaylistState, error) {
+	var st PlaylistState
+	if r.PlaylistURL == "" {
+		return st, errNoPlayQueue
+	}
+	m, err := soapCall(r.PlaylistURL, r.PlaylistType, "IdArray")
+	if err != nil {
+		return st, err
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(m["Array"]))
+	if err != nil {
+		return st, fmt.Errorf("unreadable IdArray: %v", err)
+	}
+	for i := 0; i+4 <= len(raw); i += 4 {
+		st.IDs = append(st.IDs, binary.BigEndian.Uint32(raw[i:]))
+	}
+	if m, err = soapCall(r.PlaylistURL, r.PlaylistType, "Id"); err != nil {
+		return st, err
+	}
+	cur, _ := strconv.ParseUint(m["Value"], 10, 32)
+	st.Current = uint32(cur)
+	if m, err = soapCall(r.PlaylistURL, r.PlaylistType, "TransportState"); err != nil {
+		return st, err
+	}
+	st.Playing = m["Value"] == "Playing" || m["Value"] == "Buffering"
+	if m, err = soapCall(r.PlaylistURL, r.PlaylistType, "Repeat"); err != nil {
+		return st, err
+	}
+	st.Repeat = m["Value"] == "true" || m["Value"] == "1"
+	if m, err = soapCall(r.PlaylistURL, r.PlaylistType, "Shuffle"); err != nil {
+		return st, err
+	}
+	st.Shuffle = m["Value"] == "true" || m["Value"] == "1"
+	return st, nil
+}
+
+// Entries reads the URI and metadata of a few queue tracks, in the order of ids.
+// Entries lit l'URI et les métadonnées de quelques morceaux de la file, dans
+// l'ordre de ids.
+func (r *Renderer) Entries(ids []uint32) ([]QueueEntry, error) {
+	list := make([]string, len(ids))
+	for i, id := range ids {
+		list[i] = strconv.FormatUint(uint64(id), 10)
+	}
+	res, err := soapCall(r.PlaylistURL, r.PlaylistType, "ReadList", "IdList", strings.Join(list, " "))
+	if err != nil {
+		return nil, err
+	}
+	entries, err := parseTrackList(res["TrackList"])
+	if err != nil {
+		return nil, err
+	}
+	var out []QueueEntry
+	for _, id := range list {
+		if e, ok := entries[id]; ok {
+			out = append(out, e)
+		}
+	}
+	return out, nil
+}
+
+// Insert adds a track after afterID (0: at the start) and returns its ID.
+// Insert ajoute un morceau après afterID (0 : au début) et renvoie son identifiant.
+func (r *Renderer) Insert(afterID uint32, uri, didl string) (uint32, error) {
+	if r.PlaylistURL == "" {
+		return 0, errNoPlayQueue
+	}
+	m, err := soapCall(r.PlaylistURL, r.PlaylistType, "Insert",
+		"AfterId", strconv.FormatUint(uint64(afterID), 10), "Uri", uri, "Metadata", didl)
+	if err != nil {
+		return 0, err
+	}
+	id, err := strconv.ParseUint(m["NewId"], 10, 32)
+	if err != nil {
+		return 0, errors.New("Insert: no new ID")
+	}
+	return uint32(id), nil
+}
+
 // TimeState matches the OpenHome Time action.
 // TimeState correspond à l'action Time de OpenHome.
 type TimeState struct {
@@ -355,7 +458,7 @@ type TimeState struct {
 // Time returns the track counter, duration and position of the player.
 // Time renvoie le compteur de pistes, la durée et la position du lecteur.
 func (r *Renderer) Time() (TimeState, error) {
-	m, err := soapCall(r.TimeURL, r.TimeType, "Time", nil)
+	m, err := soapCall(r.TimeURL, r.TimeType, "Time")
 	if err != nil {
 		return TimeState{}, err
 	}
@@ -368,7 +471,7 @@ func (r *Renderer) Time() (TimeState, error) {
 // Track returns the URI and DIDL-Lite metadata of the current track.
 // Track renvoie l'URI et les métadonnées DIDL-Lite de la piste en cours.
 func (r *Renderer) Track() (string, string, error) {
-	m, err := soapCall(r.InfoURL, r.InfoType, "Track", nil)
+	m, err := soapCall(r.InfoURL, r.InfoType, "Track")
 	if err != nil {
 		return "", "", err
 	}
@@ -383,11 +486,11 @@ func (r *Renderer) SourceType() string {
 	if r.ProductURL == "" {
 		return ""
 	}
-	m, err := soapCall(r.ProductURL, r.ProdType, "SourceIndex", nil)
+	m, err := soapCall(r.ProductURL, r.ProdType, "SourceIndex")
 	if err != nil {
 		return ""
 	}
-	src, err := soapCall(r.ProductURL, r.ProdType, "Source", map[string]string{"Index": m["Value"]})
+	src, err := soapCall(r.ProductURL, r.ProdType, "Source", "Index", m["Value"])
 	if err != nil {
 		return ""
 	}
@@ -400,7 +503,7 @@ func (r *Renderer) Room() string {
 	if r.ProductURL == "" {
 		return ""
 	}
-	m, err := soapCall(r.ProductURL, r.ProdType, "Product", nil)
+	m, err := soapCall(r.ProductURL, r.ProdType, "Product")
 	if err != nil {
 		return ""
 	}

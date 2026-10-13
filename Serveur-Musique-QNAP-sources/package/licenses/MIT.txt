@@ -1,10 +1,6 @@
 MIT licence, applying to:
 - ohscrobbler, the program of the "Musique NAS" package:
-  Copyright (c) 2026 the Musique NAS authors;
-- musl libc: Copyright (c) 2005-2020 Rich Felker, et al.
-  (original text: https://git.musl-libc.org/cgit/musl/tree/COPYRIGHT);
-- su-exec: Copyright (c) 2015 ncopa
-  (original text: https://github.com/ncopa/su-exec/blob/master/LICENSE).
+  Copyright (c) 2026 the Musique NAS authors.
 
 Permission is hereby granted, free of charge, to any person obtaining
 a copy of this software and associated documentation files (the

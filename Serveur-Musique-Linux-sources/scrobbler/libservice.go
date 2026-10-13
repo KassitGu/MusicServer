@@ -430,13 +430,27 @@ func (ls *LibraryService) similarRow(ix *Index) []*Artist {
 }
 
 // InfoNames returns the artists whose biography is fetched in the
-// background (the reference artists of the "Similar artists" row).
+// background (the reference artists of the "Similar artists" row), then,
+// when the endless radio is on, every other artist of the library (their
+// tags and similar artists guide the radio).
 // InfoNames renvoie les artistes dont chercher la biographie en tâche de
-// fond (ceux de référence pour la rangée « Artistes similaires »).
+// fond (ceux de référence pour la rangée « Artistes similaires »), puis,
+// quand la radio infinie est active, tous les autres artistes de la
+// bibliothèque (leurs tags et artistes similaires guident la radio).
 func (ls *LibraryService) InfoNames() []string {
+	ix := ls.Index()
 	var out []string
-	for _, ar := range ls.seedArtists(ls.Index()) {
+	seen := map[*Artist]bool{}
+	for _, ar := range ls.seedArtists(ix) {
+		seen[ar] = true
 		out = append(out, ar.Name)
+	}
+	if ls.store.Config().RadioMode != radioOff {
+		for _, ar := range ix.Artists {
+			if !seen[ar] && ar.Name != ix.various {
+				out = append(out, ar.Name)
+			}
+		}
 	}
 	return out
 }

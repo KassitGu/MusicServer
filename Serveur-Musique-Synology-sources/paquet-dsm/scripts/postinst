@@ -1,3 +1,0 @@
-#!/bin/sh
-chmod 755 "$SYNOPKG_PKGDEST/ohscrobbler" "$SYNOPKG_PKGDEST/musique.sh" 2>/dev/null
-exit 0

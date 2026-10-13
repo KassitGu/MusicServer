@@ -58,6 +58,7 @@ func (a *App) httpServer(addr string) *http.Server {
 	mux.HandleFunc("POST /name", a.handleName)
 	mux.HandleFunc("POST /fav", a.handleFav)
 	mux.HandleFunc("POST /classic", a.handleClassic)
+	mux.HandleFunc("POST /radio", a.handleRadio)
 	mux.HandleFunc("POST /pl", a.handlePlaylist)
 	mux.HandleFunc("POST /backup", a.handleBackup)
 	mux.HandleFunc("POST /restore", a.handleRestore)
@@ -195,6 +196,9 @@ type pageData struct {
 	Page         string         // tab shown / onglet affiché
 	App          *AppView       // "favourites" and "preview" tabs / onglets « favoris » et « aperçu »
 	Playlists    *PlaylistsView // "playlists" tab / onglet « playlists »
+	RadioMode    string         // endless radio: "", "tracks" or "albums" / radio infinie : "", "tracks" ou "albums"
+	Help         template.HTML  // "help" tab (help.go) / onglet « aide » (help.go)
+	Donate       string         // "Buy me a coffee" link, empty: hidden / lien « Offrez-moi un café », vide : masqué
 }
 
 // T translates a fixed text of the template.
@@ -204,6 +208,10 @@ func (d pageData) T(s string) string { return tr(d.Lang, s) }
 // F translates a format string of the template, then formats it.
 // F traduit une chaîne de format du modèle, puis la met en forme.
 func (d pageData) F(format string, args ...any) string { return trf(d.Lang, format, args...) }
+
+// D translates an English error key followed by its technical detail.
+// D traduit une clé d'erreur anglaise suivie de son détail technique.
+func (d pageData) D(key, detail string) string { return trDetail(d.Lang, key, detail) }
 
 // ExitText describes the last exit code reported by the supervisor.
 // ExitText décrit le dernier code de sortie signalé par le superviseur.
@@ -320,6 +328,7 @@ func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 		Connected: cfg.SessionKey != "", Username: cfg.Username, Enabled: cfg.Enabled,
 		Queued: q, Sent: sent, LastError: tr(lang, lastErr), Players: a.players(),
 		Usage: processUsage(lang), Library: a.libraryView(lang), ServerName: a.serverName(),
+		RadioMode: cfg.RadioMode, Donate: donateURL,
 	}
 	d.Message, d.OK = flashText(lang, r.URL.Query())
 	if a.diag != nil && a.diag.LogDir != "" {
@@ -335,8 +344,10 @@ func (a *App) handleIndex(w http.ResponseWriter, r *http.Request) {
 		d.App = a.appView(r, lang)
 	case "playlists":
 		d.Playlists = a.playlistsView(r, lang)
+	case "help":
+		d.Help = helpHTML(lang)
 	}
-	if d.Library == nil && d.Page != "server" && d.Page != "lastfm" && d.Page != "backup" {
+	if d.Library == nil && d.Page != "server" && d.Page != "lastfm" && d.Page != "backup" && d.Page != "help" {
 		d.Page = "" // library tabs need the music server / onglets de bibliothèque : serveur de musique requis
 	}
 	if !lastOK.IsZero() {
@@ -359,7 +370,7 @@ func (a *App) serverName() string {
 // Tabs of the page; an unknown name opens the first tab.
 // Onglets de la page ; un nom inconnu ouvre le premier onglet.
 var pageNames = map[string]bool{"": true, "genres": true, "favourites": true, "playlists": true, "preview": true,
-	"server": true, "lastfm": true, "backup": true}
+	"server": true, "lastfm": true, "backup": true, "help": true}
 
 func pageName(p string) string {
 	if pageNames[p] {

@@ -26,6 +26,7 @@ body{padding-top:60px}.page{padding:4px 0 90px}
 .card h2{font-size:1.3em;font-weight:500;margin:0 0 14px}.card h3{font-size:1em;margin:1.2em 0 .4em}
 label{display:block;margin:8px 0 2px}input[type=text],input[type=password],input[type=search],select{width:100%;box-sizing:border-box;padding:7px;border:1px solid #bbb;border-radius:4px}
 button{padding:6px 14px;margin-top:10px;background:#2b91d2;color:#fff;border:0;border-radius:4px;cursor:pointer}button.sec{background:#fff;color:#2b91d2;border:1px solid #2b91d2}
+a.btn{display:inline-block;padding:6px 14px;background:#2b91d2;color:#fff;border-radius:4px;text-decoration:none}.help{line-height:1.45}.help code{background:#f3f3f3;padding:0 3px}
 .ok{color:#1a7f37}.err{color:#b42318}
 table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:5px 4px;border-bottom:1px solid #eee;font-size:.95em;vertical-align:top}
 .inline{display:flex;gap:8px;align-items:center}.inline input,.inline select{flex:1}.inline button{margin-top:0}
@@ -51,6 +52,7 @@ small{color:#666}pre{white-space:pre-wrap;word-break:break-all;font-size:.8em;ba
 <a href="/?p=server" {{if eq .Page "server"}}class="on" aria-current="page"{{end}}>⚙ {{.T "Server"}}</a>
 <a href="/?p=lastfm" {{if eq .Page "lastfm"}}class="on" aria-current="page"{{end}}>⚙ Last.fm</a>
 <a href="/?p=backup" {{if eq .Page "backup"}}class="on" aria-current="page"{{end}}>⚙ {{.T "Backup"}}</a>
+<a href="/?p=help" {{if eq .Page "help"}}class="on" aria-current="page"{{end}}>? {{.T "Help"}}</a>
 </nav>
 {{if .Message}}<p class="toast {{if .OK}}good{{else}}bad{{end}}" role="status">{{if .OK}}✓ {{end}}{{.Message}}</p>{{end}}
 <main class="page">
@@ -62,11 +64,20 @@ small{color:#666}pre{white-space:pre-wrap;word-break:break-all;font-size:.8em;ba
 
 <section class="card" id="players"><h2>{{.T "Players found"}}</h2>
 {{if .Players}}<table><tr><th>{{.T "Player"}}</th><th>{{.T "Playing"}}</th><th>{{.T "Listened"}}</th></tr>
-{{range .Players}}<tr><td>{{.Name}}{{if .Error}}<br><small class="err">{{$.T .Error}}</small>{{end}}</td>
+{{range .Players}}<tr><td>{{.Name}}{{if .Error}}<br><small class="err">{{$.T .Error}}</small>{{end}}{{if $.RadioMode}}{{if .RadioErr}}<br><small class="err">{{$.T "Endless radio:"}} {{$.D .RadioErr .RadioDetail}}</small>{{else if .RadioAdded}}<br><small>{{$.F "Endless radio: %d track(s) added at %s" .RadioAdded .RadioAt}}</small>{{end}}{{end}}</td>
 <td>{{if .Title}}{{.Artist}}: {{.Title}}{{if .Album}}<br><small>{{.Album}}</small>{{end}}{{else}}<small>{{$.T "nothing"}}</small>{{end}}</td>
 <td>{{if .Title}}{{dur .Played}} / {{dur .Duration}}{{if .Scrobbled}} <span class="ok">✓</span>{{end}}{{end}}</td></tr>{{end}}
 </table>{{else}}<p>{{.T "No OpenHome player found yet (searched every 5 minutes)."}}</p>{{end}}
 </section>
+
+{{if .Library}}<section class="card" id="radio"><h2>{{.T "Endless radio"}}</h2>
+<form method="post" action="/radio"><input type="hidden" name="at" value="radio">
+<p><label><input type="radio" name="mode" value=""{{if eq .RadioMode ""}} checked{{end}}> {{.T "Off"}}</label><br>
+<label><input type="radio" name="mode" value="tracks"{{if eq .RadioMode "tracks"}} checked{{end}}> {{.T "Tracks: about five tracks, each from a different album"}}</label><br>
+<label><input type="radio" name="mode" value="albums"{{if eq .RadioMode "albums"}} checked{{end}}> {{.T "Albums: one whole album at a time"}}</label></p>
+<p><small>{{.T "When a player reaches the last track of its queue, the server adds what comes next: the same artist, artists Last.fm finds similar, the same genres and the same Last.fm tags, never what was played recently. Only on the Playlist source, while playing, without repeat or shuffle."}}
+{{if not .HasKey}}<br>{{.T "Without a Last.fm API key, only the artist and the genres count."}}{{end}}</small></p>
+<button>{{.T "Save"}}</button></form></section>{{end}}
 {{end}}
 
 {{/* ---- Genres and photos / Genres et photos ---- */}}
@@ -198,7 +209,7 @@ small{color:#666}pre{white-space:pre-wrap;word-break:break-all;font-size:.8em;ba
 {{/* ---- Music server / Serveur de musique ---- */}}
 {{if eq .Page "server"}}
 {{if .HasLogDir}}{{with .Server}}<section class="card" id="server"><h2>{{$.T "Music server"}}</h2>
-{{if .Stale}}<p class="err">{{$.F "The supervisor is no longer running (state not updated since %s): stop then start the app (App Center on QNAP, Package Center on Synology)." .Updated}}</p>{{end}}
+{{if .Stale}}<p class="err">{{$.F "The supervisor is no longer running (state not updated since %s): stop then start the app (App Center on QNAP, Package Center on Synology, 'sudo systemctl restart musique-nas' on Linux)." .Updated}}</p>{{end}}
 <table>
 <tr><td>{{$.T "Server name"}}</td><td><form method="post" action="/name" class="inline"><input type="hidden" name="back" value="server"><input type="hidden" name="at" value="server"><input type="text" name="name" maxlength="40" required value="{{.Name}}" aria-label="{{$.T "Server name"}}"><button>{{$.T "Change"}}</button></form>
 {{if .PendingName}}<small>{{$.T "Change pending:"}} {{.PendingName}}</small>{{end}}</td></tr>
@@ -261,6 +272,13 @@ small{color:#666}pre{white-space:pre-wrap;word-break:break-all;font-size:.8em;ba
 <button>{{.T "Restore"}}</button></form>
 </section>
 {{end}}
-<p style="text-align:center"><small>{{.ServerName}} · {{.Version}}</small></p>
+{{if eq .Page "help"}}
+<section class="card help" id="help"><h2>{{.T "Help"}}</h2>
+{{.Help}}</section>
+{{if .Donate}}<section class="card" id="coffee"><h2>☕ {{.T "Buy me a coffee"}}</h2>
+<p>{{.T "Musique NAS is free. If it is useful to you, you can buy its author a coffee."}}</p>
+<p><a class="btn" href="{{.Donate}}" target="_blank" rel="noopener">☕ {{.T "Buy me a coffee"}}</a></p></section>{{end}}
+{{end}}
+<p style="text-align:center"><small>{{.ServerName}} · {{.Version}}{{if .Donate}} · <a href="{{.Donate}}" target="_blank" rel="noopener">☕ {{.T "Buy me a coffee"}}</a>{{end}}</small></p>
 </main>
 </body></html>

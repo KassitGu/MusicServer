@@ -31,7 +31,8 @@ QNAPFLAG_ENCRYPT_KEY = 3589
 
 
 def usage():
-    sys.exit("usage: mkqpkg.py PKGDIR CONTROLDIR QINSTALL HEADER_TEMPLATE OUT.qpkg")
+    sys.exit("usage: mkqpkg.py PKGDIR CONTROLDIR QINSTALL HEADER_TEMPLATE OUT.qpkg ARCHES\n"
+             "  ARCHES: accepted \"uname -m\" values as a shell case pattern, e.g. 'aarch64|x86_64'")
 
 
 def tar_dir(src, mtime):
@@ -65,9 +66,11 @@ def encrypt_field(total_size):
 
 
 def main():
-    if len(sys.argv) != 6:
+    if len(sys.argv) != 7:
         usage()
-    pkgdir, ctldir, qinstall, header_tpl, out = sys.argv[1:]
+    pkgdir, ctldir, qinstall, header_tpl, out, arches = sys.argv[1:]
+    if not re.fullmatch(r"[A-Za-z0-9_*|]+", arches):
+        sys.exit("ARCHES: letters, digits, '_', '*' and '|' only")
     cfg = open(os.path.join(ctldir, "qpkg.cfg"), encoding="utf-8").read()
     name = re.search(r'^QPKG_NAME="([^"]+)"', cfg, re.M).group(1)
     disp = re.search(r'^QPKG_DISPLAY_NAME="([^"]+)"', cfg, re.M).group(1)
@@ -109,7 +112,7 @@ def main():
     tpl = open(header_tpl, encoding="utf-8").read()
 
     def render(script_len):
-        return (tpl.replace("@NAME@", name).replace("@DISPLAY@", disp).replace("@VER@", ver)
+        return (tpl.replace("@ARCHES@", arches).replace("@NAME@", name).replace("@DISPLAY@", disp).replace("@VER@", ver)
                    .replace("@COUNT@", str(count)).replace("@DATALEN@", str(len(data)))
                    .replace("@SCRIPT_LEN@", str(script_len))).encode("utf-8")
 

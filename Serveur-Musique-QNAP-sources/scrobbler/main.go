@@ -77,9 +77,17 @@ type actor struct {
 	cancel  context.CancelFunc
 	lastErr string
 	room    string
+	radio   radioState // endless radio (radio.go) / radio infinie (radio.go)
 }
 
 func main() {
+	// "ohscrobbler run-as ACCOUNT COMMAND...": used by the supervisor (runas.go).
+	// « ohscrobbler run-as COMPTE COMMANDE… » : utilisé par le superviseur (runas.go).
+	if len(os.Args) > 2 && os.Args[1] == "run-as" {
+		err := runAs(os.Args[2], os.Args[3:])
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(126)
+	}
 	dataDir := flag.String("data", "./data", "settings and queue folder")
 	listen := flag.String("listen", ":8790", "settings page address")
 	musicDir := flag.String("music-dir", "", "music folder (empty: no music server)")
@@ -359,6 +367,7 @@ func (a *App) pollLoop(ctx context.Context, ac *actor) {
 			}
 		} else {
 			failures = 0
+			a.radioStep(ctx, ac, time.Now())
 		}
 		select {
 		case <-ctx.Done():
@@ -444,7 +453,7 @@ func (a *App) handleLastfmErr(err error) {
 	var le *LastfmError
 	if errors.As(err, &le) && le.SessionInvalid() {
 		_ = a.store.UpdateConfig(func(c *Config) { c.SessionKey = ""; c.Username = "" })
-		a.store.SetError("Session Last.fm refusée : reconnectez le compte.")
+		a.store.SetError("Last.fm session refused: reconnect the account.")
 		return
 	}
 	a.store.SetError(err.Error())
@@ -506,6 +515,13 @@ type PlayerStatus struct {
 	Name, Location, Error, Artist, Title, Album string
 	Played, Duration                            int
 	Scrobbled                                   bool
+	// Endless radio: tracks added by the last action and its time, or the
+	// last error (English key and detail).
+	// Radio infinie : morceaux ajoutés par la dernière action et son heure,
+	// ou la dernière erreur (clé anglaise et détail).
+	RadioAdded            int
+	RadioAt               string
+	RadioErr, RadioDetail string
 }
 
 // players returns the followed players, sorted by name.
@@ -517,7 +533,11 @@ func (a *App) players() []PlayerStatus {
 	for _, ac := range a.actors {
 		m, played, dur, done := ac.tracker.Current()
 		out = append(out, PlayerStatus{Name: ac.tracker.Player, Location: ac.r.Location, Error: ac.lastErr,
-			Artist: m.Artist, Title: m.Title, Album: m.Album, Played: played, Duration: dur, Scrobbled: done})
+			Artist: m.Artist, Title: m.Title, Album: m.Album, Played: played, Duration: dur, Scrobbled: done,
+			RadioAdded: ac.radio.added, RadioErr: ac.radio.err, RadioDetail: ac.radio.errInfo})
+		if !ac.radio.at.IsZero() {
+			out[len(out)-1].RadioAt = ac.radio.at.Format("15:04")
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out

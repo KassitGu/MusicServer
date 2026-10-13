@@ -133,9 +133,11 @@ func (d *Diag) listShares() []string {
 	var out []string
 	for _, e := range ents {
 		name := e.Name()
-		// QTS internal volumes, not shared folders.
-		// Volumes internes de QTS, pas des dossiers partagés.
-		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "CACHEDEV") || strings.HasSuffix(name, "_DATA") ||
+		// System folders, not shared folders: QTS internal volumes, and the
+		// "@..." and "#..." folders of DSM (@appstore, #recycle...).
+		// Dossiers système, pas des dossiers partagés : volumes internes de
+		// QTS, et dossiers « @… » et « #… » de DSM (@appstore, #recycle…).
+		if systemShare(name) || strings.HasPrefix(name, "CACHEDEV") || strings.HasSuffix(name, "_DATA") ||
 			strings.HasPrefix(name, "external") {
 			continue
 		}
@@ -146,6 +148,14 @@ func (d *Diag) listShares() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// systemShare reports a hidden or system folder name (".", "@" or "#" first),
+// never offered nor accepted as a music folder.
+// systemShare signale un nom de dossier caché ou système (« . », « @ » ou
+// « # » en tête), jamais proposé ni accepté comme dossier musique.
+func systemShare(name string) bool {
+	return name != "" && strings.ContainsRune(".@#", rune(name[0]))
 }
 
 // State gathers everything the "Music server" tab shows.
@@ -208,6 +218,9 @@ func (d *Diag) ValidMusicDir(p string) (string, error) {
 	clean := filepath.Clean(p)
 	root := filepath.Clean(d.Shares) + "/"
 	if !strings.HasPrefix(clean+"/", root) || clean+"/" == root {
+		return "", errOutsideRoot
+	}
+	if share, _, _ := strings.Cut(strings.TrimPrefix(clean+"/", root), "/"); systemShare(share) {
 		return "", errOutsideRoot
 	}
 	st, err := os.Stat(clean)

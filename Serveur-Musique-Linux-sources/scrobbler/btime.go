@@ -24,6 +24,7 @@ package main
 // à chaque architecture (statx_*.go).
 
 import (
+	"encoding/binary"
 	"syscall"
 	"unsafe"
 )
@@ -52,9 +53,15 @@ func fileBirth(path string) int64 {
 	}
 	// stx_mask (offset 0) says which fields the kernel filled in.
 	// stx_mask (décalage 0) indique les champs remplis par le noyau.
-	mask := *(*uint32)(unsafe.Pointer(&buf[0]))
+	mask := binary.LittleEndian.Uint32(buf[0:4])
 	if mask&statxBtime == 0 {
 		return 0
 	}
-	return *(*int64)(unsafe.Pointer(&buf[80])) // stx_btime.tv_sec
+	// Read byte by byte: the buffer may not be 8-byte aligned, which 32-bit
+	// ARM does not accept for a direct 64-bit load. All supported NAS
+	// processors are little-endian.
+	// Lecture octet par octet : le tampon n'est peut-être pas aligné sur 8
+	// octets, ce que l'ARM 32 bits refuse pour une lecture directe de 64 bits.
+	// Tous les processeurs de NAS prévus sont petit-boutistes.
+	return int64(binary.LittleEndian.Uint64(buf[80:88])) // stx_btime.tv_sec
 }

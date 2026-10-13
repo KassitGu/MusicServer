@@ -11,6 +11,8 @@ script musique.sh. It is at the same time:
   (FLAC, ALAC, AAC, MP3, WAV, AIFF, DSF), sends the files untouched (no
   transcoding) and covers reduced to 800 px with a quality badge;
 - a play tracker for the OpenHome players, which scrobbles to Last.fm;
+- an optional endless radio: when a player reaches the end of its queue,
+  similar tracks or a whole similar album are added (Players tab);
 - the settings and status page http://<address>:8790/, in English or
   French.
 

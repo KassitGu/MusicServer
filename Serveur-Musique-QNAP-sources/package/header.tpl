@@ -74,7 +74,7 @@ arch_ok(){
 local cpu_arch=$(/bin/uname -m)
 local reject_platform=$(/sbin/getcfg "" Platform -f /etc/platform.conf)
 if [ $(/usr/bin/expr match "$reject_platform" "") == 0 ]; then
-[ $(/usr/bin/expr match "$cpu_arch" "aarch64") -ne 0 ] || return 1
+case "$cpu_arch" in @ARCHES@) ;; *) return 1 ;; esac
 else
 return 1
 fi

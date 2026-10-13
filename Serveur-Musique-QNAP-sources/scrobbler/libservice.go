@@ -44,10 +44,11 @@ type LibraryService struct {
 	// (without reading the disk again).
 	// Dernière indexation publiée, pour republier quand une playlist du
 	// serveur change (sans relire le disque).
-	lastTracks []*Track
-	lastLists  []RawPlaylist
-	watchErr   string
-	watched    int
+	lastTracks  []*Track
+	lastLists   []RawPlaylist
+	watchErr    string // English key of the last watch error / clé anglaise de la dernière erreur de surveillance
+	watchDetail string // technical detail of that error / détail technique de cette erreur
+	watched     int
 }
 
 // NewLibraryService creates the service with an empty index.
@@ -160,7 +161,7 @@ func (ls *LibraryService) Run(ctx context.Context) {
 	}
 	w, err := newWatcher()
 	if err != nil {
-		ls.setWatch(0, "surveillance indisponible : "+err.Error())
+		ls.setWatch(0, "watching unavailable", err.Error())
 		w = nil
 	} else {
 		defer w.Close()
@@ -184,14 +185,14 @@ func (ls *LibraryService) Run(ctx context.Context) {
 			if w != nil {
 				werr := w.Sync(ls.scanner.Dirs())
 				n, full := w.Count()
-				msg := ""
+				key := ""
 				if werr != nil {
-					msg = werr.Error()
+					key = werr.Error() // English key (watch.go) / clé anglaise (watch.go)
 				}
 				if full {
 					period = 30 * time.Minute
 				}
-				ls.setWatch(n, msg)
+				ls.setWatch(n, key, "")
 			} else {
 				period = 30 * time.Minute
 			}
@@ -227,20 +228,25 @@ func (ls *LibraryService) Run(ctx context.Context) {
 	}
 }
 
-// setWatch records the number of watched folders and the last watch error.
-// setWatch enregistre le nombre de dossiers surveillés et la dernière erreur de surveillance.
-func (ls *LibraryService) setWatch(n int, msg string) {
+// setWatch records the number of watched folders and the last watch error
+// (English key, translated on the page, plus a technical detail).
+// setWatch enregistre le nombre de dossiers surveillés et la dernière erreur
+// de surveillance (clé anglaise, traduite sur la page, et détail technique).
+func (ls *LibraryService) setWatch(n int, key, detail string) {
 	ls.mu.Lock()
-	ls.watched, ls.watchErr = n, msg
+	ls.watched, ls.watchErr, ls.watchDetail = n, key, detail
 	ls.mu.Unlock()
 }
 
 // WatchStatus returns the number of watched folders and the last watch error.
 // WatchStatus renvoie le nombre de dossiers surveillés et la dernière erreur de surveillance.
-func (ls *LibraryService) WatchStatus() (int, string) {
+func (ls *LibraryService) WatchStatus(lang string) (int, string) {
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
-	return ls.watched, ls.watchErr
+	if ls.watchErr == "" {
+		return ls.watched, ""
+	}
+	return ls.watched, trDetail(lang, ls.watchErr, ls.watchDetail)
 }
 
 // purgeArt removes the covers that are no longer used from the cache.
@@ -424,13 +430,27 @@ func (ls *LibraryService) similarRow(ix *Index) []*Artist {
 }
 
 // InfoNames returns the artists whose biography is fetched in the
-// background (the reference artists of the "Similar artists" row).
+// background (the reference artists of the "Similar artists" row), then,
+// when the endless radio is on, every other artist of the library (their
+// tags and similar artists guide the radio).
 // InfoNames renvoie les artistes dont chercher la biographie en tâche de
-// fond (ceux de référence pour la rangée « Artistes similaires »).
+// fond (ceux de référence pour la rangée « Artistes similaires »), puis,
+// quand la radio infinie est active, tous les autres artistes de la
+// bibliothèque (leurs tags et artistes similaires guident la radio).
 func (ls *LibraryService) InfoNames() []string {
+	ix := ls.Index()
 	var out []string
-	for _, ar := range ls.seedArtists(ls.Index()) {
+	seen := map[*Artist]bool{}
+	for _, ar := range ls.seedArtists(ix) {
+		seen[ar] = true
 		out = append(out, ar.Name)
+	}
+	if ls.store.Config().RadioMode != radioOff {
+		for _, ar := range ix.Artists {
+			if !seen[ar] && ar.Name != ix.various {
+				out = append(out, ar.Name)
+			}
+		}
 	}
 	return out
 }

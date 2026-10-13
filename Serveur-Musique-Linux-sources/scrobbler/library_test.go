@@ -1021,7 +1021,7 @@ func TestHomeSettingsPage(t *testing.T) {
 	// Genres proposés et tuiles gardant leur valeur, contenu échappé.
 	body := get("/?p=genres", "")
 	if !strings.Contains(body, `<option value="jazz" selected>Jazz (1)</option>`) || !strings.Contains(body, `<option value="classique" selected>`) ||
-		strings.Contains(body, "TIDAL") || strings.Contains(body, "Qobuz") || !strings.Contains(body, `src="/logo.png"`) {
+		!strings.Contains(body, `src="/logo.png"`) {
 		t.Fatalf("page:\n%s", body)
 	}
 	if body := get("/?p=preview", ""); !strings.Contains(body, "Kind of Blue (Miles Davis)") {

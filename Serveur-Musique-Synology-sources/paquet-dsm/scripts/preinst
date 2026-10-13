@@ -1,3 +1,0 @@
-#!/bin/sh
-# Rien à faire : les données (var/) sont gardées par DSM lors d'une mise à jour.
-exit 0

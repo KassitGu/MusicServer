@@ -1,6 +1,6 @@
 #!/bin/sh
-# "Musique NAS" service for QNAP QTS 5.x (ARM 64-bit).
-# Service « Musique NAS » pour QNAP QTS 5.x (ARM 64 bits).
+# "Musique NAS" service for QNAP QTS (ARM or Intel, 32 or 64-bit).
+# Service « Musique NAS » pour QNAP QTS (ARM ou Intel, 32 ou 64 bits).
 #
 # Starts the package program (ohscrobbler), which is at the same time:
 #  - the UPnP music server seen by the control app (port 49494);
@@ -20,12 +20,14 @@
 # applique les demandes faites depuis la page de réglages (dossier musique,
 # nom diffusé, redémarrage), après les avoir revérifiées.
 #
-# su-exec (account switch) is a musl (Alpine) binary: it is started through
-# the bundled musl loader, without touching the QTS libraries. The program
-# itself is static.
-# su-exec (changement de compte) est un binaire musl (Alpine) : il est lancé
-# par le chargeur musl fourni, sans toucher aux bibliothèques de QTS. Le
-# programme lui-même est statique.
+# The package carries one static program per processor family (bin/); the
+# one matching this NAS is installed as ohscrobbler (select_binary). The
+# program also performs the switch to the unprivileged account ("run-as"
+# mode), so no other tool is needed.
+# Le paquet contient un programme statique par famille de processeur (bin/) ;
+# celui qui correspond à ce NAS est installé sous le nom ohscrobbler
+# (select_binary). Le programme fait aussi le passage sur le compte non
+# privilégié (mode « run-as »), sans autre outil.
 #
 # Settings / réglages : data/settings.conf (ini format read with getcfg /
 # format ini lu avec getcfg).
@@ -42,9 +44,6 @@ LOGDIR="$DATA/logs"      # written by the program (unprivileged) / écrit par le
 STATEDIR="$DATA/state"   # written by the supervisor (root only) / écrit par le superviseur (root seulement)
 REQDIR="$DATA/scrobbler" # program settings and page requests / réglages du programme et demandes de la page
 CACHEDIR="$DATA/cache"   # library index, covers, photos / index de la bibliothèque, pochettes, photos
-TLIB="$QPKG_ROOT/tools/lib"
-LOADER="$TLIB/ld-musl-aarch64.so.1"
-SUEXEC="$QPKG_ROOT/tools/bin/su-exec"
 SERVER="$QPKG_ROOT/ohscrobbler"
 SUPER_PID=/var/run/musique-supervisor.pid
 SERVER_PID=/var/run/musique-server.pid
@@ -150,7 +149,7 @@ pick_user() {
     user=$(setting RUN_AS httpdusr)
     music="$1"
     if [ -n "$user" ] && [ "$user" != "root" ] && grep -q "^${user}:" /etc/passwd; then
-        if "$LOADER" --library-path "$TLIB" "$SUEXEC" "$user" /bin/sh -c 'test -r "$1" && test -x "$1"' sh "$music" 2>/dev/null; then
+        if "$SERVER" run-as "$user" /bin/sh -c 'test -r "$1" && test -x "$1"' sh "$music" 2>/dev/null; then
             echo "$user"
             return
         fi
@@ -211,11 +210,11 @@ load_config() {
 }
 
 # Starts the program. Its output is redirected AFTER the account switch (sh
-# started by su-exec), so that root never opens a file in a folder owned by
+# started by "run-as"), so that root never opens a file in a folder owned by
 # the unprivileged account. The cause of a stop (error, panic) shows up in
 # that output.
 # Lance le programme. Sa sortie est redirigée APRÈS le changement de compte
-# (sh lancé par su-exec), pour que root n'ouvre jamais un fichier d'un
+# (sh lancé par « run-as »), pour que root n'ouvre jamais un fichier d'un
 # dossier appartenant au compte non privilégié. La cause d'un arrêt (erreur,
 # « panic ») apparaît dans cette sortie.
 launch_server() {
@@ -223,7 +222,7 @@ launch_server() {
     set -- -data "$REQDIR" -listen ":$PAGE_PORT" -music-dir "$music" -upnp-port $UPNP_PORT \
         -name "$name" -udn "$udn" -cache "$CACHEDIR" -logdir "$LOGDIR" -statedir "$STATEDIR" -shares /share
     [ -n "$iface" ] && set -- "$@" -iface "$iface"
-    "$LOADER" --library-path "$TLIB" "$SUEXEC" "$user" /bin/sh -c \
+    "$SERVER" run-as "$user" /bin/sh -c \
         'echo "=== start $(date "+%d/%m/%Y %H:%M:%S")" >>"$0"; exec "$@" </dev/null >>"$0" 2>&1' \
         "$LOGDIR/server.log" "$SERVER" "$@" &
     S=$!
@@ -383,12 +382,36 @@ supervise() {
     done
 }
 
+# Installs the program built for this processor from bin/ (left there by
+# each installation or upgrade), then removes bin/. Also done by the install
+# routine; repeated here in case the package was copied by hand.
+# Installe depuis bin/ (déposé à chaque installation ou mise à jour) le
+# programme construit pour ce processeur, puis supprime bin/. Fait aussi par
+# la routine d'installation ; répété ici si le paquet a été copié à la main.
+select_binary() {
+    [ -d "$QPKG_ROOT/bin" ] || return 0
+    case "$(uname -m)" in
+        aarch64|arm64) arch=arm64 ;;
+        x86_64|amd64) arch=amd64 ;;
+        i386|i486|i586|i686) arch=386 ;;
+        armv7*|armv8l) arch=arm ;;
+        *) log "Unsupported processor: $(uname -m)."; return 1 ;;
+    esac
+    if [ -f "$QPKG_ROOT/bin/ohscrobbler-$arch" ]; then
+        mv -f "$QPKG_ROOT/bin/ohscrobbler-$arch" "$SERVER" && chmod 755 "$SERVER"
+        rm -f "$QPKG_ROOT"/bin/ohscrobbler-*
+        rmdir "$QPKG_ROOT/bin" 2>/dev/null
+    fi
+    return 0
+}
+
 start() {
     ENABLED=$(/sbin/getcfg $QPKG_NAME Enable -u -d FALSE -f $CONF)
     if [ "$ENABLED" != "TRUE" ]; then
         echo "$QPKG_NAME is disabled."
         exit 1
     fi
+    select_binary || exit 1
     init_settings
 
     # The server watches every album folder with inotify (new albums are
@@ -443,6 +466,9 @@ case "$1" in
   restart)
     stop
     start
+    ;;
+  select-binary)
+    select_binary || exit 1
     ;;
   supervise)
     mkdir -p "$STATEDIR"

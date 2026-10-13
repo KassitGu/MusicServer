@@ -16,6 +16,9 @@ func TestValidMusicDir(t *testing.T) {
 	share := filepath.Join(root, "share")
 	os.MkdirAll(filepath.Join(share, "Musique", "Jazz"), 0o755)
 	os.MkdirAll(filepath.Join(root, "etc"), 0o755)
+	// DSM system folders / dossiers système de DSM.
+	os.MkdirAll(filepath.Join(share, "@appstore", "x"), 0o755)
+	os.MkdirAll(filepath.Join(share, "#recycle"), 0o755)
 	os.WriteFile(filepath.Join(share, "fichier"), []byte("x"), 0o644)
 	d := &Diag{Shares: share}
 	ok := []string{share + "/Musique", share + "/Musique/Jazz/", share + "/Musique/./Jazz"}
@@ -25,11 +28,15 @@ func TestValidMusicDir(t *testing.T) {
 		}
 	}
 	bad := []string{"", share, share + "/", share + "/../etc", root + "/etc", share + "/absent",
-		share + "/fichier", share + "/Musique\n[x]", "relatif/Musique", share + "x/Musique"}
+		share + "/fichier", share + "/Musique\n[x]", "relatif/Musique", share + "x/Musique",
+		share + "/@appstore", share + "/@appstore/x", share + "/#recycle"}
 	for _, p := range bad {
 		if _, err := d.ValidMusicDir(p); err == nil {
 			t.Errorf("%q accepted", p)
 		}
+	}
+	if got := d.listShares(); len(got) != 1 || got[0] != share+"/Musique" {
+		t.Errorf("listShares: %v", got)
 	}
 }
 

@@ -123,6 +123,9 @@ func TestArtistInfo(t *testing.T) {
 			}
 			io.WriteString(w, `{"artist":{"name":"Miles Davis","mbid":"561d854a-6a28-4aa7-8c99-323e6ce46c2a","url":"https://www.last.fm/music/Miles+Davis","bio":{"summary":`+
 				jsonQuote(summary)+`}}}`)
+		case "artist.getTopTags":
+			io.WriteString(w, `{"toptags":{"tag":[{"name":"Jazz","count":100},{"name":"seen live","count":60},{"name":"Miles Davis","count":40},`+
+				`{"name":"trumpet","count":"30"},{"name":"rare","count":2}]}}`)
 		case "artist.getSimilar":
 			io.WriteString(w, `{"similarartists":{"artist":[{"name":"John Coltrane"},{"name":"Glenn Gould"},{"name":"Daft Punk"}]}}`)
 		default:
@@ -144,7 +147,8 @@ func TestArtistInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 	if d.Bio != "Miles Davis est un trompettiste." || d.BioLang != "fr" || d.Official != "https://www.milesdavis.com/" ||
-		d.LastfmURL != "https://www.last.fm/music/Miles+Davis" || len(d.Similar) != 3 {
+		d.LastfmURL != "https://www.last.fm/music/Miles+Davis" || len(d.Similar) != 3 ||
+		strings.Join(d.Tags, ",") != "jazz,trumpet" || !d.TagsDone {
 		t.Fatalf("data: %+v", d)
 	}
 	ix := ls.Index()

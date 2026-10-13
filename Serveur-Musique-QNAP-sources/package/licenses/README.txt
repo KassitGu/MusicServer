@@ -1,5 +1,5 @@
-MUSIQUE NAS - music server for QNAP (ARM 64-bit, QTS 5.x)
-==========================================================
+MUSIQUE NAS - music server for QNAP (ARM or Intel, QTS 5 or QTS 4.2-4.5)
+=========================================================================
 
 What it is
 ----------
@@ -12,8 +12,10 @@ script musique.sh. It is at the same time:
 - a play tracker for the OpenHome players, which scrobbles to Last.fm;
 - the settings and status page http://<NAS-address>:8790/ (also opened from
   the App Center).
-su-exec and the musl loader (MIT) start the program under an unprivileged
-account. They stay inside the package folder and do not touch QTS.
+There is one package for QTS 5 and one for QTS 4.2 to 4.5. Each carries the
+program for every processor family of its QTS version; installation keeps
+the one of the NAS. The program switches
+itself to an unprivileged account and does not touch QTS.
 
 In the control app
 ------------------

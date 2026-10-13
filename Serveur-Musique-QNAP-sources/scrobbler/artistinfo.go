@@ -81,6 +81,8 @@ type ArtistData struct {
 	MBID      string    `json:"mbid,omitempty"`
 	Official  string    `json:"official,omitempty"` // official website (MusicBrainz) / site officiel (MusicBrainz)
 	Similar   []string  `json:"similar,omitempty"`  // Last.fm names, closest first / noms Last.fm, du plus proche au moins proche
+	Tags      []string  `json:"tags,omitempty"`     // listeners' tags, most used first (radio.go) / tags des auditeurs, les plus utilisés d'abord (radio.go)
+	TagsDone  bool      `json:"tags_done,omitempty"`
 	Found     bool      `json:"found"`
 	Fetched   time.Time `json:"fetched"`
 }
@@ -141,7 +143,9 @@ func (ai *ArtistInfo) fresh(name string) bool {
 	if d.Found {
 		// A biography fetched for another display language is fetched again.
 		// Une biographie cherchée pour une autre langue d'affichage est recherchée.
-		return time.Since(d.Fetched) < infoTTL && d.Lang == configLang(ai.store.Config())
+		// Entries saved without tags are fetched again once.
+		// Les entrées gardées sans tags sont recherchées une fois de plus.
+		return time.Since(d.Fetched) < infoTTL && d.Lang == configLang(ai.store.Config()) && d.TagsDone
 	}
 	return time.Since(d.Fetched) < infoRetry
 }
@@ -278,6 +282,13 @@ func (ai *ArtistInfo) Fetch(ctx context.Context, name string) (ArtistData, error
 				d.Similar = append(d.Similar, n)
 			}
 		}
+	}
+	// A Last.fm error (no tags) counts as done; a network error does not.
+	// Une erreur Last.fm (pas de tags) compte comme faite ; une erreur réseau non.
+	tags, err := ai.lastfm(ctx, "artist.getTopTags", url.Values{"artist": {name}, "api_key": {key}, "autocorrect": {"1"}})
+	if err == nil || errors.As(err, &le) {
+		d.Tags = cleanTags(jsonList(tags, "toptags", "tag"), d.Name)
+		d.TagsDone = true
 	}
 	if site, err := ai.officialSite(ctx, d.MBID, d.Name); err == nil {
 		d.Official = site

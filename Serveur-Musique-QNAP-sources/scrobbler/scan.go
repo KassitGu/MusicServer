@@ -344,18 +344,35 @@ var leadingNumber = regexp.MustCompile(`^(\d{1,3})[\s._-]*(?:-\s*)?`)
 // addedVersion : méthode de calcul de Track.Added (2 = date de création).
 const addedVersion = 2
 
+// birthTime is a variable so that tests can simulate a kernel without
+// creation dates.
+// birthTime est une variable pour que les tests simulent un noyau sans date
+// de création.
+var birthTime = fileBirth
+
 // added returns when the file arrived on the NAS: its creation date on disk
-// (btime.go), otherwise its modification time, never later than the scan.
+// (btime.go), never later than the scan. Without a creation date (Linux
+// kernel older than 4.11, as on some Synology DSM): the scan that first sees
+// the file, or its modification time during the very first indexing (the
+// whole library would otherwise look added on the same day).
 // ctime is not used: the NAS updates it on whole folders, which would break
 // the "recently added" order.
 // added renvoie la date d'arrivée du fichier sur le NAS : date de création sur
-// le disque (btime.go), sinon date de modification, jamais après l'indexation.
+// le disque (btime.go), jamais après l'indexation. Sans date de création
+// (noyau Linux antérieur à 4.11, comme sur certains DSM Synology) :
+// l'indexation qui voit le fichier pour la première fois, ou sa date de
+// modification lors de la toute première indexation (sinon toute la
+// bibliothèque semblerait ajoutée le même jour).
 // ctime n'est pas utilisé : le NAS le met à jour sur des dossiers entiers, ce
 // qui fausserait l'ordre des derniers ajouts.
 func (w *walker) added(path string, st os.FileInfo) int64 {
-	a := fileBirth(path)
+	a := birthTime(path)
 	if a <= 0 {
-		a = st.ModTime().Unix()
+		if len(w.prev) > 0 && w.prev[path] == nil {
+			a = w.now.Unix()
+		} else {
+			a = st.ModTime().Unix()
+		}
 	}
 	if a > w.now.Unix() {
 		a = w.now.Unix()

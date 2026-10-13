@@ -6,9 +6,9 @@
 # Usage: ./build.sh            (tests, then build / tests puis construction)
 #        SKIP_TESTS=1 ./build.sh
 #
-# The version comes from package/INFO only ("0.1.0-0001": program version,
+# The version comes from package/INFO only ("0.1.3-0001": program version,
 # then DSM build number).
-# La version vient uniquement de package/INFO (« 0.1.0-0001 » : version du
+# La version vient uniquement de package/INFO (« 0.1.3-0001 » : version du
 # programme, puis numéro de build DSM).
 set -eu
 

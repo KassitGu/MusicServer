@@ -295,3 +295,28 @@ func (a *App) handleClassic(w http.ResponseWriter, r *http.Request) {
 		redirectOK(w, r, "Rows interface saved: the server restarts, the control app will show the rows.")
 	}
 }
+
+// handleRadio saves the endless radio mode (radio.go). Turning it on also
+// starts fetching the Last.fm tags and similar artists of the library.
+// handleRadio enregistre le mode de la radio infinie (radio.go). L'activer
+// lance aussi la recherche des tags Last.fm et artistes similaires de la
+// bibliothèque.
+func (a *App) handleRadio(w http.ResponseWriter, r *http.Request) {
+	mode := r.FormValue("mode")
+	if mode != radioOff && mode != radioTracks && mode != radioAlbums {
+		redirectMsg(w, r, "Invalid request.")
+		return
+	}
+	if err := a.store.UpdateConfig(func(c *Config) { c.RadioMode = mode }); err != nil {
+		redirectMsg(w, r, "Could not save: %s", err)
+		return
+	}
+	if mode == radioOff {
+		redirectOK(w, r, "Endless radio turned off.")
+		return
+	}
+	if a.info != nil {
+		a.info.Kick()
+	}
+	redirectOK(w, r, "Endless radio saved: it starts at the last track of a player's queue.")
+}

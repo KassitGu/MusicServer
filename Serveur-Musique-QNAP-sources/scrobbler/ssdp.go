@@ -31,21 +31,33 @@ type SSDPAnnouncer struct {
 	Port         int
 	IfaceName    string // empty: default route interface / vide : carte de la route par défaut
 
-	mu    sync.Mutex
-	where string // announced interface and address (shown on the settings page) / carte et adresse annoncées (affichées sur la page de réglages)
+	mu     sync.Mutex
+	where  string // announced interface and address (shown on the settings page) / carte et adresse annoncées (affichées sur la page de réglages)
+	note   string // English key of a problem, translated on the page / clé anglaise d'un problème, traduite sur la page
+	detail string // technical detail of the problem / détail technique du problème
 }
 
-// Where returns "eth1 (192.168.68.54:49494)", or the reason why nothing is announced.
-// Where renvoie « eth1 (192.168.68.54:49494) », ou la raison de l'absence d'annonce.
-func (s *SSDPAnnouncer) Where() string {
+// Where returns "eth1 (192.168.68.54:49494)", or the reason why nothing is
+// announced, in the language of the page.
+// Where renvoie « eth1 (192.168.68.54:49494) », ou la raison de l'absence
+// d'annonce, dans la langue de la page.
+func (s *SSDPAnnouncer) Where(lang string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.where
+	if s.note == "" {
+		return s.where
+	}
+	if s.where == "" {
+		return trDetail(lang, s.note, s.detail)
+	}
+	return s.where + ", " + trDetail(lang, s.note, s.detail)
 }
 
-func (s *SSDPAnnouncer) setWhere(v string) {
+// setWhere records the announced address and, if any, the problem met.
+// setWhere enregistre l'adresse annoncée et, le cas échéant, le problème rencontré.
+func (s *SSDPAnnouncer) setWhere(where, note, detail string) {
 	s.mu.Lock()
-	s.where = v
+	s.where, s.note, s.detail = where, note, detail
 	s.mu.Unlock()
 }
 
@@ -136,12 +148,12 @@ func (s *SSDPAnnouncer) Run(ctx context.Context) {
 		ifc, ip, err := pickIface(s.IfaceName)
 		if err != nil {
 			logf("SSDP: %v", err)
-			s.setWhere("aucune annonce : " + err.Error())
+			s.setWhere("", "no announcements", err.Error())
 			sleepCtx(ctx, 30*time.Second)
 			continue
 		}
 		logf("SSDP: announcing on %s (%s:%d)", ifc.Name, ip, s.Port)
-		s.setWhere(fmt.Sprintf("%s (%s:%d)", ifc.Name, ip, s.Port))
+		s.setWhere(fmt.Sprintf("%s (%s:%d)", ifc.Name, ip, s.Port), "", "")
 		s.runOn(ctx, ifc, ip)
 	}
 }
@@ -178,7 +190,7 @@ func (s *SSDPAnnouncer) runOn(ctx context.Context, ifc *net.Interface, ip net.IP
 		// les annonces périodiques suffisent à l'application de contrôle pour
 		// voir le serveur : on continue en mode « annonces seules ».
 		logf("SSDP: cannot listen (%v): announcements only", err)
-		s.setWhere(fmt.Sprintf("%s (%s:%d), annonces seules : %v", ifc.Name, ip, s.Port, err))
+		s.setWhere(fmt.Sprintf("%s (%s:%d)", ifc.Name, ip, s.Port), "announcements only", err.Error())
 		lc = nil
 	}
 	out, err := net.ListenUDP("udp4", &net.UDPAddr{IP: ip, Port: 0})
@@ -187,7 +199,7 @@ func (s *SSDPAnnouncer) runOn(ctx context.Context, ifc *net.Interface, ip net.IP
 			lc.Close()
 		}
 		logf("SSDP: cannot send: %v", err)
-		s.setWhere("aucune annonce : " + err.Error())
+		s.setWhere("", "no announcements", err.Error())
 		sleepCtx(ctx, 30*time.Second)
 		return
 	}

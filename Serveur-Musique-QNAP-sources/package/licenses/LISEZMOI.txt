@@ -1,5 +1,5 @@
-MUSIQUE NAS - serveur de musique pour QNAP (ARM 64 bits, QTS 5.x)
-=================================================================
+MUSIQUE NAS - serveur de musique pour QNAP (ARM ou Intel, QTS 5 ou QTS 4.2 à 4.5)
+==================================================================================
 
 Ce que c'est
 ------------
@@ -13,8 +13,10 @@ script de service musique.sh. Il est à la fois :
 - le suivi des écoutes des lecteurs OpenHome, envoyées à Last.fm ;
 - la page de réglages et d'état http://<adresse-du-NAS>:8790/ (ouverte
   aussi depuis l'App Center).
-su-exec et le chargeur musl (MIT) lancent le programme sous un compte non
-privilégié. Ils restent dans le dossier du paquet et ne touchent pas à QTS.
+Il existe un paquet pour QTS 5 et un pour QTS 4.2 à 4.5. Chacun contient le
+programme pour chaque famille de processeur de sa version de QTS ;
+l'installation garde celui du NAS. Le programme passe
+lui-même sur un compte non privilégié et ne touche pas à QTS.
 
 Dans l'application de contrôle
 ------------------------------

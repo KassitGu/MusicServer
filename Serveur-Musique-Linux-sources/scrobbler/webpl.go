@@ -345,6 +345,7 @@ type backupFile struct {
 	FavoriteArtists []string       `json:"favorite_artists"`
 	PhotoProvider   string         `json:"photo_provider"`
 	ClassicUPnP     bool           `json:"classic_upnp"`
+	RadioMode       string         `json:"radio_mode,omitempty"`
 	Playlists       []UserPlaylist `json:"playlists"`
 	Lastfm          *backupLastfm  `json:"lastfm,omitempty"` // only when asked / seulement si demandé
 }
@@ -359,7 +360,7 @@ func (a *App) handleBackup(w http.ResponseWriter, r *http.Request) {
 	cfg := a.store.Config()
 	b := backupFile{Format: backupFormat, Version: version, Date: time.Now().UTC(), Lang: cfg.Lang, Enabled: cfg.Enabled,
 		FavoriteGenres: cfg.FavoriteGenres, FavoriteAlbums: cfg.FavoriteAlbums, FavoriteArtists: cfg.FavoriteArtists,
-		PhotoProvider: cfg.PhotoProvider, ClassicUPnP: cfg.ClassicUPnP}
+		PhotoProvider: cfg.PhotoProvider, ClassicUPnP: cfg.ClassicUPnP, RadioMode: cfg.RadioMode}
 	if a.supervised() {
 		st := a.diag.State(a.store.dir)
 		b.Name, b.MusicDir = st.Name, st.MusicDir
@@ -426,7 +427,7 @@ func (a *App) handleRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validStrings(b.FavoriteGenres, tileCount, 200) || !validStrings(b.FavoriteAlbums, maxFavorites, 64) ||
 		!validStrings(b.FavoriteArtists, maxFavorites, 64) || (b.PhotoProvider != "" && b.PhotoProvider != "deezer") ||
-		(b.Lang != "" && !validLang(b.Lang)) {
+		(b.Lang != "" && !validLang(b.Lang)) || (b.RadioMode != radioOff && b.RadioMode != radioTracks && b.RadioMode != radioAlbums) {
 		redirectTo(w, r, "backup", "", false, "Backup refused: invalid favourites or settings.")
 		return
 	}
@@ -449,7 +450,7 @@ func (a *App) handleRestore(w http.ResponseWriter, r *http.Request) {
 	err = a.store.UpdateConfig(func(c *Config) {
 		c.Enabled = b.Enabled
 		c.FavoriteGenres, c.FavoriteAlbums, c.FavoriteArtists = b.FavoriteGenres, b.FavoriteAlbums, b.FavoriteArtists
-		c.PhotoProvider, c.ClassicUPnP = b.PhotoProvider, b.ClassicUPnP
+		c.PhotoProvider, c.ClassicUPnP, c.RadioMode = b.PhotoProvider, b.ClassicUPnP, b.RadioMode
 		if b.Lang != "" {
 			c.Lang = b.Lang
 		}

@@ -46,6 +46,9 @@ type Config struct {
 	// Langue d'affichage : "en" (anglais britannique) ou "fr" ; vide tant
 	// qu'elle n'est pas choisie.
 	Lang string `json:"lang,omitempty"`
+	// Endless radio: "" (off), "tracks" or "albums" (radio.go).
+	// Radio infinie : "" (arrêt), "tracks" (morceaux) ou "albums" (radio.go).
+	RadioMode string `json:"radio_mode,omitempty"`
 }
 
 // defaultConfig returns the settings used before anything is saved.
@@ -97,6 +100,9 @@ func OpenStore(dir string) (*Store, error) {
 	// laissée par une configuration précédente est ramenée à Deezer.
 	if s.cfg.PhotoProvider != "" && s.cfg.PhotoProvider != "deezer" {
 		s.cfg.PhotoProvider = "deezer"
+	}
+	if s.cfg.RadioMode != radioTracks && s.cfg.RadioMode != radioAlbums {
+		s.cfg.RadioMode = radioOff
 	}
 	if err := readJSON(filepath.Join(dir, "queue.json"), &s.queue); err != nil && !errors.Is(err, os.ErrNotExist) {
 		s.queue = nil

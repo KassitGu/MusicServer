@@ -15,41 +15,67 @@ ROOT=$(pwd)
 VERSION=$(sed -n 's/^QPKG_VER="\(.*\)"$/\1/p' package/control/qpkg.cfg)
 NAME=$(sed -n 's/^QPKG_NAME="\(.*\)"$/\1/p' package/control/qpkg.cfg)
 [ -n "$VERSION" ] && [ -n "$NAME" ] || { echo "QPKG_VER / QPKG_NAME missing in qpkg.cfg" >&2; exit 1; }
-OUT="$ROOT/dist/${NAME}_${VERSION}_arm_64.qpkg"
-PKG="$ROOT/build/pkg"
 
 echo "== ${NAME} ${VERSION}"
 
-# 1. Program: tests, then a static ARM 64-bit binary.
-# 1. Programme : tests, puis binaire statique ARM 64 bits.
+# Two editions, never mixed in one file. Each line: edition, minimum QTS,
+# maximum QTS ("-": none), Go processor families, accepted "uname -m".
+#   QTS5: QTS 5 runs on 64-bit ARM and Intel, and on some 32-bit ARM models.
+#   QTS4: QTS 4.2 to 4.5, every QNAP processor family (32-bit Intel included).
+# Deux éditions, jamais mélangées dans un même fichier. Chaque ligne :
+# édition, QTS minimum, QTS maximum (« - » : aucun), familles de processeur
+# Go, valeurs de « uname -m » acceptées.
+#   QTS5 : QTS 5 tourne sur ARM et Intel 64 bits, et sur certains ARM 32 bits.
+#   QTS4 : QTS 4.2 à 4.5, toutes les familles de processeur QNAP (Intel 32 bits compris).
+EDITIONS="QTS5 5.0.0 - arm64,amd64,arm aarch64|arm64|x86_64|amd64|armv7*|armv8l
+QTS4 4.2.0 4.5.9 arm64,amd64,386,arm aarch64|arm64|x86_64|amd64|i386|i486|i586|i686|armv7*|armv8l"
+
+# 1. Program: tests, then one static binary per processor family found in
+#    QNAP NAS (ARM and Intel, 64 and 32-bit).
+# 1. Programme : tests, puis un binaire statique par famille de processeur
+#    des NAS QNAP (ARM et Intel, 64 et 32 bits).
 cd "$ROOT/scrobbler"
 if [ "${SKIP_TESTS:-}" != "1" ]; then
     go vet ./...
     go test ./...
 fi
 rm -rf "$ROOT/build"
-mkdir -p "$PKG" "$ROOT/dist"
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-    go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$PKG/ohscrobbler" .
+mkdir -p "$ROOT/build/bin" "$ROOT/dist"
+for arch in arm64 amd64 386 arm; do
+    CGO_ENABLED=0 GOOS=linux GOARCH=$arch GOARM=7 \
+        go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$ROOT/build/bin/ohscrobbler-$arch" .
+done
 cd "$ROOT"
 
-# 2. Package content: service script, notices and licences, su-exec and the
-#    musl loader (Alpine Linux, see package/licenses/COMPONENTS.tsv), icons.
-# 2. Contenu du paquet : script de service, notices et licences, su-exec et
-#    le chargeur musl (Alpine Linux, voir package/licenses/COMPONENTS.tsv), icônes.
-cp package/musique.sh "$PKG/"
-cp -R package/licenses "$PKG/licenses"
-mkdir -p "$PKG/tools/bin" "$PKG/tools/lib"
-cp package/tools/bin/su-exec "$PKG/tools/bin/"
-cp package/tools/lib/ld-musl-aarch64.so.1 "$PKG/tools/lib/"
-ln -s ld-musl-aarch64.so.1 "$PKG/tools/lib/libc.musl-aarch64.so.1"
-for f in qpkg_icon qpkg_icon_80 qpkg_icon_gray; do
-    cp "package/icons/$f.gif" "$PKG/.$f.gif"
-done
-chmod 755 "$PKG/ohscrobbler" "$PKG/musique.sh" "$PKG/tools/bin/su-exec" "$PKG/tools/lib/ld-musl-aarch64.so.1"
+echo "$EDITIONS" | while read -r EDITION QTS_MIN QTS_MAX GOARCHES UNAMES; do
+    PKG="$ROOT/build/$EDITION/pkg"
+    CTL="$ROOT/build/$EDITION/control"
+    OUT="$ROOT/dist/${NAME}_${VERSION}_${EDITION}.qpkg"
+    mkdir -p "$PKG/bin" "$CTL"
 
-# 3. Assembly in the QDK format, then checksum.
-# 3. Assemblage au format QDK, puis somme de contrôle.
-python3 package/mkqpkg.py "$PKG" package/control package/qinstall.sh package/header.tpl "$OUT"
-( cd dist && sha256sum "$(basename "$OUT")" > "$(basename "$OUT").sha256" )
-echo "== $OUT"
+    # 2. Package content: the binaries of this edition (the install routine
+    #    keeps the one matching the NAS), service script, licences, icons.
+    # 2. Contenu du paquet : les binaires de cette édition (la routine
+    #    d'installation garde celui du NAS), script de service, licences, icônes.
+    for arch in $(echo "$GOARCHES" | tr ',' ' '); do
+        cp "$ROOT/build/bin/ohscrobbler-$arch" "$PKG/bin/"
+    done
+    cp package/musique.sh "$PKG/"
+    cp -R package/licenses "$PKG/licenses"
+    for f in qpkg_icon qpkg_icon_80 qpkg_icon_gray; do
+        cp "package/icons/$f.gif" "$PKG/.$f.gif"
+    done
+    chmod 755 "$PKG"/bin/ohscrobbler-* "$PKG/musique.sh"
+
+    # 3. QTS limits of this edition, checked by the installer.
+    # 3. Limites QTS de cette édition, contrôlées par l'installeur.
+    cp package/control/package_routines "$CTL/"
+    sed "s/^QTS_MINI_VERSION=.*/QTS_MINI_VERSION=\"$QTS_MIN\"/" package/control/qpkg.cfg > "$CTL/qpkg.cfg"
+    [ "$QTS_MAX" = "-" ] || echo "QTS_MAX_VERSION=\"$QTS_MAX\"" >> "$CTL/qpkg.cfg"
+
+    # 4. Assembly in the QDK format, then checksum.
+    # 4. Assemblage au format QDK, puis somme de contrôle.
+    python3 package/mkqpkg.py "$PKG" "$CTL" package/qinstall.sh package/header.tpl "$OUT" "$UNAMES"
+    ( cd dist && sha256sum "$(basename "$OUT")" > "$(basename "$OUT").sha256" )
+    echo "== $OUT"
+done

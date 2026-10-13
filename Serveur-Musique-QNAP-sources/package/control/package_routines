@@ -13,9 +13,15 @@
 # par ces routines.
 ######################################################################
 
+# The package carries one program per processor family in bin/: the one
+# matching this NAS becomes ohscrobbler and the others are removed
+# (musique.sh select_binary, also run at each start).
+# Le paquet contient un programme par famille de processeur dans bin/ : celui
+# qui correspond à ce NAS devient ohscrobbler et les autres sont supprimés
+# (select_binary de musique.sh, aussi lancé à chaque démarrage).
 pkg_post_install(){
-    $CMD_CHMOD 755 ${SYS_QPKG_DIR}/musique.sh ${SYS_QPKG_DIR}/ohscrobbler
-    $CMD_CHMOD 755 ${SYS_QPKG_DIR}/tools/bin/su-exec ${SYS_QPKG_DIR}/tools/lib/ld-musl-aarch64.so.1
+    $CMD_CHMOD 755 ${SYS_QPKG_DIR}/musique.sh
+    ${SYS_QPKG_DIR}/musique.sh select-binary
     $CMD_MKDIR -p ${SYS_QPKG_DIR}/data
     $CMD_CHMOD 755 ${SYS_QPKG_DIR}/data
 }

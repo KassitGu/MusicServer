@@ -12,6 +12,9 @@ script musique.sh. C'est à la fois :
   les fichiers tels quels (sans transcodage) et des pochettes réduites à
   800 px avec un badge de qualité ;
 - le suivi des écoutes des lecteurs OpenHome, envoyées à Last.fm ;
+- une radio infinie facultative : quand un lecteur arrive au bout de sa
+  file, des morceaux ou un album entier similaires y sont ajoutés (onglet
+  Lecteurs) ;
 - la page de réglages et d'état http://<adresse>:8790/, en français ou en
   anglais.
 
