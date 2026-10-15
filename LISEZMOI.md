@@ -5,8 +5,7 @@ Il indexe une bibliothèque locale FLAC/MP3, la diffuse en UPnP avec
 des pochettes fiables et des badges de qualité, et envoie les écoutes à Last.fm.
 
 > **À propos du nom.** *Tonearmix* réunit le **tonearm**, le bras de lecture d'une platine vinyle qui pose le diamant sur le
-> disque, et le **mix** des sources que le serveur rassemble : le dossier de musique, les disques externes et les autres NAS,
-> en une seule bibliothèque.
+> disque, et le **mix** pour la distribution du mixage des musiques.
 
 Un seul programme Go (bibliothèque standard uniquement) est partagé par quatre éditions :
 
