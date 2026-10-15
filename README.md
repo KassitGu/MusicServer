@@ -4,7 +4,7 @@ A lightweight music server for NAS devices, Raspberry Pi boards and Linux comput
 players. It indexes a local FLAC/MP3 library, serves it over UPnP with reliable cover art and quality badges, and scrobbles what is played to Last.fm.
 
 > **About the name.** *Tonearmix* joins the **tonearm**, the arm of a turntable that lays the stylus on the record, and the
-> **mix** of sources the server brings together: the music folder, external disks and other NASes, into one library.
+> **mix** referring to the distribution of a musical mix..
 
 One Go program (standard library only) is shared by four editions:
 
