@@ -1,0 +1,69 @@
+# systemd unit of the "Tonearmix" music server.
+# Unité systemd du serveur de musique « Tonearmix ».
+#
+# @LIBDIR@ is replaced at build or install time: /usr/lib/tonearmix for
+# the .deb package, /opt/tonearmix for the .tar.gz archive.
+# @LIBDIR@ est remplacé à la construction ou à l'installation :
+# /usr/lib/tonearmix pour le paquet .deb, /opt/tonearmix pour l'archive
+# .tar.gz.
+#
+# Local changes (another account, music in a home folder...): use
+# "sudo systemctl edit tonearmix" rather than editing this file.
+# Changements locaux (autre compte, musique dans un dossier personnel…) :
+# utiliser « sudo systemctl edit tonearmix » plutôt que modifier ce fichier.
+
+[Unit]
+Description=Tonearmix music server (UPnP / OpenHome, Last.fm)
+Documentation=file://@DOCDIR@/README.txt
+# Disks from /etc/fstab and network shares (NFS, SMB) mounted first.
+# Disques de /etc/fstab et partages réseau (NFS, SMB) montés d'abord.
+After=network-online.target local-fs.target remote-fs.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tonearmix
+Group=tonearmix
+ExecStart=/bin/sh @LIBDIR@/tonearmix.sh supervise
+# The supervisor restarts the program itself; systemd only restarts the
+# supervisor. TERM goes to the supervisor first so that it stops the
+# program cleanly.
+# Le superviseur relance lui-même le programme ; systemd ne relance que le
+# superviseur. TERM va d'abord au superviseur pour qu'il arrête proprement
+# le programme.
+Restart=on-failure
+RestartSec=10
+KillMode=mixed
+TimeoutStopSec=30
+# Data: /var/lib/tonearmix (created by systemd, owned by the account).
+# Données : /var/lib/tonearmix (créé par systemd, propriété du compte).
+StateDirectory=tonearmix
+StateDirectoryMode=0750
+UMask=0027
+
+# Hardening: the service only reads the music and writes its own data.
+# Durcissement : le service ne fait que lire la musique et écrire ses
+# propres données.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+# AF_NETLINK: list of network cards; AF_INET/AF_INET6: HTTP, UPnP, SSDP.
+# AF_NETLINK : liste des cartes réseau ; AF_INET/AF_INET6 : HTTP, UPnP, SSDP.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

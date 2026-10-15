@@ -1,4 +1,0 @@
-#!/bin/sh
-# Nothing to do: DSM keeps var/ across upgrades.
-# Rien à faire : DSM conserve var/ lors d'une mise à jour.
-exit 0

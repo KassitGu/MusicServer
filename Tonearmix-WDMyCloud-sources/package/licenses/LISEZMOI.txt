@@ -1,0 +1,73 @@
+TONEARMIX - serveur de musique pour WD My Cloud (1re génération, armv7)
+=========================================================================
+
+Ce que c'est
+------------
+Un seul programme, ohscrobbler (licence MIT), lancé par
+/etc/init.d/tonearmix sous son propre compte sans privilèges, et surveillé
+par le script tonearmix.sh. C'est à la fois :
+- le serveur de musique UPnP « Tonearmix » vu par les lecteurs OpenHome et
+  leur application de contrôle (port 49494, événements sur 49495). Il
+  indexe le dossier musique (FLAC, ALAC, AAC, MP3, WAV, AIFF, DSF), envoie
+  les fichiers tels quels (sans transcodage) et des pochettes réduites à
+  800 px avec un badge de qualité ;
+- le suivi des écoutes des lecteurs OpenHome, envoyées à Last.fm ;
+- une radio infinie facultative : quand un lecteur arrive au bout de sa
+  file, des morceaux ou un album entier similaires y sont ajoutés (onglet
+  Lecteurs) ;
+- la page de réglages et d'état http://<adresse>:8790/, en français ou en
+  anglais.
+
+Premiers pas
+------------
+1. Ouvrir http://<adresse>:8790/ et vérifier le dossier musique dans
+   l'onglet Serveur. Au premier lancement, un dossier « Music », « Musique »
+   ou « Shared Music » est cherché dans les partages
+   (/DataVolume/shares/<partage>).
+2. Si la page indique que le compte ne peut pas lire le dossier :
+     chmod -R o+rX "/DataVolume/shares/<partage>/<dossier>"
+3. Last.fm : créer une clé API sur https://www.last.fm/api/account/create
+   (nom d'application libre, Callback URL vide), coller la clé et le secret
+   dans l'onglet Last.fm, Enregistrer, puis « Se connecter à Last.fm ».
+
+Service (en SSH, en root)
+-------------------------
+  /etc/init.d/tonearmix status      état
+  /etc/init.d/tonearmix restart     redémarrage (aussi depuis l'onglet Serveur)
+  /DataVolume/tonearmix/data/state/supervisor.log   messages du superviseur
+
+Après une mise à jour du firmware du My Cloud, relancer ./install.sh depuis
+l'archive : le script de démarrage est sur la partition système, que la
+mise à jour réécrit. Réglages, index et playlists sont conservés.
+
+Fichier de réglages : /DataVolume/tonearmix/data/settings.conf
+----------------------------------------------------------------
+  SHARES       racine sous laquelle le dossier musique peut être choisi
+               depuis la page (par défaut : /DataVolume/shares)
+  MUSIC_DIR    dossier musique
+  SERVER_NAME  nom affiché dans l'application de contrôle (par défaut :
+               Tonearmix)
+  INTERFACE    carte réseau ; vide = celle qui porte la route par défaut
+  SERVER_UDN   identifiant UPnP du serveur ; ne pas le modifier
+Après une modification : /etc/init.d/tonearmix restart.
+
+Mémoire : le My Cloud a 256 Mo de mémoire. Le script de démarrage fixe une
+limite souple (GOMEMLIMIT=96MiB, GOGC=50) ; pour la changer, écrire ces deux
+lignes, avec d'autres valeurs, dans /DataVolume/tonearmix/defaults
+(propriété de root).
+
+Données (conservées lors d'une mise à jour) : /DataVolume/tonearmix/data
+  scrobbler/  réglages de la page (config.json, mode 0600), scrobbles en
+              attente, classements Last.fm, écoutes locales, playlists
+  cache/      index de la bibliothèque, pochettes réduites, photos,
+              biographies (peut être supprimé : il est reconstruit)
+  logs/       journal du serveur
+  state/      état et journal du superviseur
+
+Ports : 8790 (page), 49494 (serveur UPnP), 49495 (événements de
+l'application), 1900/UDP (découverte SSDP).
+
+Licences
+--------
+Composants : COMPONENTS.tsv. Textes des licences : MIT.txt,
+OFL-1.1-Inter.txt (police des badges). Les logos des badges sont dessinés pour le projet ; celui du Hi-Res suit le logo Hi-Res Audio (marque de la Japan Audio Society).

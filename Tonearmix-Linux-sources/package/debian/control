@@ -1,0 +1,14 @@
+Package: tonearmix
+Version: 1.0.0
+Architecture: @ARCH@
+Maintainer: Tonearmix authors
+Installed-Size: @SIZE@
+Depends: adduser, systemd
+Section: sound
+Priority: optional
+Homepage: https://github.com/KassitGu/MusicServer
+Description: UPnP music server for OpenHome players, with Last.fm scrobbling
+ Tonearmix serves a local music library (FLAC, ALAC, AAC, MP3, WAV, AIFF,
+ DSF) to OpenHome and UPnP network players and their control app: home
+ screen in rows with favourites and search, quality badges on covers,
+ Last.fm scrobbling. Settings page on port 8790, in English or French.

@@ -1,0 +1,55 @@
+TONEARMIX - serveur de musique pour Synology (Intel/AMD ou ARM, DSM 7 ou DSM 6.2)
+=================================================================================
+
+Ce que c'est
+------------
+Un seul programme, ohscrobbler (licence MIT), lancé et surveillé par le
+script de service tonearmix.sh. C'est à la fois :
+- le serveur de musique UPnP « Tonearmix » vu par les lecteurs OpenHome et
+  leur application de contrôle (port 49494, événements sur 49495). Il
+  indexe le dossier musique (FLAC, ALAC, AAC, MP3, WAV, AIFF, DSF), envoie
+  les fichiers tels quels (sans transcodage) et des pochettes réduites à
+  800 px avec un badge de qualité ;
+- le suivi des écoutes des lecteurs OpenHome, envoyées à Last.fm ;
+- la page de réglages et d'état http://<adresse-du-NAS>:8790/ (ouverte aussi
+  depuis le Centre de paquets), en français ou en anglais.
+
+Premiers pas
+------------
+1. Panneau de configuration > Dossier partagé > dossier de la musique >
+   Modifier > Permissions > Utilisateur interne du système >
+   Tonearmix > Lecture seule > Enregistrer.
+   DSM 7 exécute le paquet sous son propre compte, qui ne peut lire aucun
+   dossier partagé sans autorisation.
+2. Ouvrir http://<adresse-du-NAS>:8790/ et vérifier le dossier musique dans
+   l'onglet Serveur.
+3. Last.fm : créer une clé API sur https://www.last.fm/api/account/create
+   (nom d'application libre, Callback URL vide), coller la clé et le secret
+   dans l'onglet Last.fm, Enregistrer, puis « Se connecter à Last.fm ».
+
+Fichier de réglages : /var/packages/Tonearmix/var/settings.conf
+--------------------------------------------------------------------
+  SHARES       racine des dossiers partagés (par défaut : /volume1)
+  MUSIC_DIR    dossier de la musique (détecté : /volume1/music…)
+  SERVER_NAME  nom affiché dans l'application de contrôle (par défaut : Tonearmix)
+  INTERFACE    carte réseau ; vide = celle qui porte la route par défaut
+  SERVER_UDN   identifiant UPnP du serveur, à ne pas modifier
+Après une modification, arrêter puis exécuter le paquet dans le Centre de
+paquets.
+
+Données (conservées lors d'une mise à jour) : /var/packages/Tonearmix/var
+  scrobbler/  réglages de la page (config.json, droits 0600), écoutes en
+              attente, classements Last.fm, écoutes locales, playlists
+  cache/      index de la bibliothèque, pochettes réduites, photos,
+              biographies (peut être supprimé : il est reconstruit)
+  logs/       journal du serveur
+  state/      état et journal du superviseur
+
+Ports : 8790 (page), 49494 (serveur UPnP), 49495 (événements de
+l'application), 1900/UDP (découverte SSDP). À autoriser si le pare-feu de
+DSM est activé.
+
+Licences
+--------
+Composants : COMPONENTS.tsv. Textes des licences : MIT.txt,
+OFL-1.1-Inter.txt (police des badges). Les logos des badges sont dessinés pour le projet ; celui du Hi-Res suit le logo Hi-Res Audio (marque de la Japan Audio Society).

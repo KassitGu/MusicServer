@@ -1,0 +1,9 @@
+#!/bin/sh
+# DSM 7 keeps var/ across upgrades. DSM 6 replaces target/, where the data
+# lives (target/var): it is saved before the upgrade.
+# DSM 7 conserve var/ lors d'une mise à jour. DSM 6 remplace target/, où sont
+# les données (target/var) : elles sont mises de côté avant la mise à jour.
+if [ -z "$SYNOPKG_PKGVAR" ] && [ -d "$SYNOPKG_PKGDEST/var" ] && [ -n "$SYNOPKG_TEMP_UPGRADE_FOLDER" ]; then
+    cp -a "$SYNOPKG_PKGDEST/var" "$SYNOPKG_TEMP_UPGRADE_FOLDER/" 2>/dev/null
+fi
+exit 0

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Called by the Package Center (DSM 6 and 7); the logic lives in tonearmix.sh.
+# Appelé par le Centre de paquets (DSM 6 et 7) ; la logique est dans tonearmix.sh.
+case "$1" in
+    start|stop|status|restart)
+        exec /bin/sh "${SYNOPKG_PKGDEST:-/var/packages/Tonearmix/target}/tonearmix.sh" "$1"
+        ;;
+    log)
+        echo "${SYNOPKG_PKGVAR:-${SYNOPKG_PKGDEST:-/var/packages/Tonearmix/target}/var}/state/supervisor.log"
+        ;;
+esac
+exit 0

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Debian package: stops the service before removal or upgrade.
+# Paquet Debian : arrête le service avant suppression ou mise à jour.
+set -e
+
+if [ -d /run/systemd/system ]; then
+    systemctl stop tonearmix.service || true
+    if [ "$1" = "remove" ]; then
+        systemctl disable tonearmix.service >/dev/null 2>&1 || true
+    fi
+fi
+exit 0

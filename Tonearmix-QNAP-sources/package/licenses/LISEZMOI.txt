@@ -1,0 +1,98 @@
+TONEARMIX - serveur de musique pour QNAP (ARM ou Intel, QTS 5 ou QTS 4.2 à 4.5)
+==================================================================================
+
+Ce que c'est
+------------
+Un seul programme, ohscrobbler (licence MIT), lancé et surveillé par le
+script de service tonearmix.sh. Il est à la fois :
+- le serveur de musique UPnP « Tonearmix » vu par les lecteurs OpenHome et
+  leur application de contrôle (port 49494, événements sur 49495). Il indexe
+  le dossier musique (FLAC, ALAC, AAC, MP3, WAV, AIFF, DSF), envoie les
+  fichiers tels quels (aucun transcodage) et des pochettes réduites à
+  800 px avec un badge de qualité ;
+- le suivi des écoutes des lecteurs OpenHome, envoyées à Last.fm ;
+- la page de réglages et d'état http://<adresse-du-NAS>:8790/ (ouverte
+  aussi depuis l'App Center).
+Il existe un paquet pour QTS 5 et un pour QTS 4.2 à 4.5. Chacun contient le
+programme pour chaque famille de processeur de sa version de QTS ;
+l'installation garde celui du NAS. Le programme passe
+lui-même sur un compte non privilégié et ne touche pas à QTS.
+
+Dans l'application de contrôle
+------------------------------
+Le serveur parle l'interface en rangées de l'application (« Media
+Endpoint ») : accueil en rangées avec les favoris, et recherche (album,
+artiste, morceau, compositeur). Rangées, dans l'ordre (une rangée vide
+n'est pas affichée) :
+  Albums favoris, Artistes favoris, Genres favoris   choisis sur :8790
+  Derniers ajoutés           date de création des fichiers sur le disque
+  Les plus écoutés           10 morceaux (Last.fm + écoutes sur vos lecteurs)
+  Écoutés récemment          10 morceaux (mêmes sources)
+  Coups de cœur Last.fm      vos morceaux aimés sur Last.fm présents sur le NAS
+  Artistes similaires (Last.fm)  proches de vos favoris, présents sur le NAS
+  Albums, Artistes, Genres, Playlists
+Les compilations (« Various Artists », « VA »…) sont regroupées par dossier
+sous une seule entrée « Artistes divers ». Si l'application affiche mal les
+rangées, l'onglet « Aperçu » propose un mode classique (dossiers UPnP simples).
+
+Badges des pochettes : CD (16 bits, 44,1/48 kHz), Hi-Res Audio (plus de 16
+bits ou de 48 kHz, DSD) ou MP3, avec la résolution écrite dessous.
+
+Page de réglages (port 8790)
+----------------------------
+Langue : anglais ou français (boutons EN / FR en haut à droite). Le choix
+s'applique aussi aux noms des rangées et dossiers dans l'application.
+Onglets : Lecteurs, Genres et photos, Favoris, Playlists, Aperçu, Serveur,
+Last.fm, Sauvegarde.
+- Playlists : créer, renommer, supprimer, ajouter des albums ou des
+  morceaux, changer l'ordre, et enregistrer la file d'attente d'un lecteur
+  en playlist. L'application de contrôle ne sait pas créer de playlist.
+  Les fichiers .m3u du dossier musique sont aussi publiés.
+- Sauvegarde : télécharge les favoris, playlists et réglages dans un
+  fichier JSON (compte Last.fm seulement si la case est cochée) et
+  restaure un tel fichier.
+Les photos d'artistes viennent de Deezer (seul le nom de l'artiste est
+envoyé) ; biographies et artistes similaires de Last.fm ; sites officiels
+de MusicBrainz.
+
+Last.fm
+-------
+1. Créer une clé API : https://www.last.fm/api/account/create
+   (nom d'application libre, Callback URL vide).
+2. Ouvrir http://<adresse-du-NAS>:8790/, onglet Last.fm, coller la clé et le
+   secret, Enregistrer, puis « Se connecter à Last.fm » et autoriser.
+Une écoute est envoyée quand la moitié du morceau (ou 4 minutes) a été
+jouée, uniquement pour la source « Playlist » des lecteurs (musique
+locale). Les écoutes faites sans Internet attendent 14 jours au plus.
+
+Fichier de réglages : data/settings.conf (dans le dossier du paquet)
+--------------------------------------------------------------------
+Créé au premier démarrage. Après modification, arrêter puis démarrer
+l'application dans l'App Center. La plupart des réglages se changent plus
+simplement sur la page :8790.
+  MUSIC_DIR    dossier de la musique (détecté : /share/Music, /share/Multimedia…)
+  SERVER_NAME  nom affiché dans l'application (défaut : Tonearmix)
+  INTERFACE    carte réseau à utiliser ; vide = automatique (celle de la
+               route par défaut). À régler seulement si les lecteurs ne
+               voient pas le serveur.
+  RUN_AS       compte qui lit la musique (défaut : httpdusr). Sans droit de
+               lecture, le service démarre en root et le signale dans le
+               journal système de QTS.
+  SERVER_UDN   identifiant UPnP du serveur ; ne pas le modifier.
+
+Données (conservées lors d'une mise à jour)
+-------------------------------------------
+  data/scrobbler/  réglages de la page (config.json, droits 0600), écoutes en
+                   attente, classements Last.fm, écoutes locales, playlists
+  data/cache/      index de la bibliothèque, pochettes réduites, photos,
+                   biographies (peut être supprimé : il est reconstruit)
+  data/logs/       journal du serveur
+  data/state/      état et journal du superviseur
+
+Ports : 8790 (page), 49494 (serveur UPnP), 49495 (événements de
+l'application), 1900/UDP (découverte SSDP).
+
+Licences
+--------
+Composants : COMPONENTS.tsv. Textes des licences : MIT.txt, OFL-1.1-Inter.txt
+(police des badges). Les logos des badges sont dessinés pour le projet ; celui du Hi-Res suit le logo Hi-Res Audio (marque de la Japan Audio Society).

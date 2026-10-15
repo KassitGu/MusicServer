@@ -1,0 +1,7 @@
+#!/bin/sh
+# DSM 6: puts back the data saved by preupgrade. DSM 7: nothing to do.
+# DSM 6 : remet les données mises de côté par preupgrade. DSM 7 : rien à faire.
+if [ -z "$SYNOPKG_PKGVAR" ] && [ -d "$SYNOPKG_TEMP_UPGRADE_FOLDER/var" ]; then
+    cp -a "$SYNOPKG_TEMP_UPGRADE_FOLDER/var" "$SYNOPKG_PKGDEST/" 2>/dev/null
+fi
+exit 0

@@ -1,0 +1,37 @@
+#!/bin/sh
+# Debian package: creates the service account, raises the inotify limit when
+# needed, then enables and (re)starts the service.
+# Paquet Debian : crée le compte du service, relève la limite inotify si
+# besoin, puis active et (re)lance le service.
+set -e
+
+if [ "$1" = "configure" ]; then
+    if ! getent passwd tonearmix >/dev/null; then
+        adduser --system --group --home /var/lib/tonearmix --no-create-home \
+            --gecos "Tonearmix music server" tonearmix >/dev/null
+    fi
+    # Settings of the former name of the project ("musique-nas"): taken over
+    # once, then the old service is disabled (it can be removed afterwards).
+    # Réglages de l'ancien nom du projet (« musique-nas ») : repris une fois,
+    # puis l'ancien service est désactivé (il peut ensuite être supprimé).
+    if [ -d /var/lib/musique-nas ] && [ ! -e /var/lib/tonearmix/settings.conf ]; then
+        systemctl disable --now musique-nas.service >/dev/null 2>&1 || true
+        mkdir -p /var/lib/tonearmix
+        cp -a /var/lib/musique-nas/. /var/lib/tonearmix/
+        sed -i 's/^SERVER_NAME = Musique NAS$/SERVER_NAME = Tonearmix/' /var/lib/tonearmix/settings.conf 2>/dev/null || true
+        chown -R tonearmix:tonearmix /var/lib/tonearmix
+        echo "Tonearmix: settings taken over from musique-nas, now disabled (it can be removed)."
+    fi
+    w=$(cat /proc/sys/fs/inotify/max_user_watches 2>/dev/null || echo 0)
+    if [ "$w" -lt 262144 ]; then
+        cp /usr/share/tonearmix/60-tonearmix-inotify.conf /etc/sysctl.d/
+        sysctl -q -w fs.inotify.max_user_watches=262144 || true
+    fi
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload
+        systemctl enable tonearmix.service >/dev/null 2>&1 || true
+        systemctl restart tonearmix.service || true
+    fi
+    echo "Tonearmix: settings page on http://$(hostname -I 2>/dev/null | cut -d' ' -f1):8790/"
+fi
+exit 0

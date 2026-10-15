@@ -1,0 +1,128 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          tonearmix
+# Required-Start:    $local_fs $network $remote_fs
+# Required-Stop:     $local_fs $network $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Tonearmix music server (UPnP / OpenHome, Last.fm)
+### END INIT INFO
+#
+# Start-up script of the "Tonearmix" music server on the WD My Cloud
+# (first generation, SysV init). Installed as /etc/init.d/tonearmix by
+# install.sh; @LIBDIR@ is filled in at install time.
+# Script de démarrage du serveur de musique « Tonearmix » sur le WD My
+# Cloud (première génération, init SysV). Installé en /etc/init.d/tonearmix
+# par install.sh ; @LIBDIR@ est rempli à l'installation.
+#
+# Usage: /etc/init.d/tonearmix start | stop | restart | status
+
+NAME=tonearmix
+ACCOUNT=tonearmix
+LIBDIR=@LIBDIR@
+DATA=/DataVolume/$NAME/data
+PIDFILE=/var/run/$NAME.pid
+# Optional local settings (memory limits below). / Réglages locaux facultatifs
+# (limites mémoire ci-dessous).
+DEFAULTS=/DataVolume/$NAME/defaults
+
+# The My Cloud has 256 MB of RAM, shared with the WD services. A soft memory
+# limit makes the Go runtime collect garbage sooner instead of growing; it is
+# not a hard cap. Both values can be changed in $DEFAULTS.
+# Le My Cloud a 256 Mo de mémoire, partagés avec les services WD. Une limite
+# mémoire souple fait libérer la mémoire plus tôt par le Go au lieu de
+# grossir ; ce n'est pas un plafond strict. Les deux valeurs se changent dans
+# $DEFAULTS.
+GOMEMLIMIT=96MiB
+GOGC=50
+[ -f "$DEFAULTS" ] && [ "$(stat -c %u "$DEFAULTS")" = 0 ] && . "$DEFAULTS"
+export GOMEMLIMIT GOGC
+
+running() {
+    [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
+}
+
+# The account and the data folder are checked at every start: a firmware
+# update rewrites the system partition, and /etc/passwd with it.
+# Le compte et le dossier de données sont vérifiés à chaque démarrage : une
+# mise à jour du firmware réécrit la partition système, et /etc/passwd avec.
+prepare() {
+    if ! grep -q "^$ACCOUNT:" /etc/passwd; then
+        useradd --system --user-group --home-dir "$DATA" --no-create-home \
+            --shell /bin/false --comment "Tonearmix music server" "$ACCOUNT" || return 1
+    fi
+    # Read access to the shares of the My Cloud (group "share" when present).
+    # Lecture des partages du My Cloud (groupe « share » s'il existe).
+    if grep -q '^share:' /etc/group && ! id -nG "$ACCOUNT" | grep -qw share; then
+        usermod -a -G share "$ACCOUNT" 2>/dev/null || true
+    fi
+    # The parent folder holds the program and $DEFAULTS, read by root: it
+    # must stay root's alone. Only data/ belongs to the account.
+    # Le dossier parent contient le programme et $DEFAULTS, lu par root : il
+    # doit rester à root seul. Seul data/ appartient au compte.
+    # Tonearmix watches every album folder with inotify, so that new
+    # albums are found without walking the disk; a large library exceeds the
+    # default limit of the kernel.
+    # Tonearmix surveille chaque dossier d'album avec inotify, pour trouver
+    # les nouveaux albums sans parcourir le disque ; une grande bibliothèque
+    # dépasse la limite par défaut du noyau.
+    w=$(cat /proc/sys/fs/inotify/max_user_watches 2>/dev/null || echo 0)
+    [ "$w" -ge 262144 ] || echo 262144 > /proc/sys/fs/inotify/max_user_watches 2>/dev/null || true
+    mkdir -p "$DATA"
+    chown root:root "${DATA%/*}"
+    chmod 755 "${DATA%/*}"
+    chown "$ACCOUNT:$ACCOUNT" "$DATA"
+    chmod 750 "$DATA"
+}
+
+start() {
+    if running; then
+        echo "$NAME is already running."
+        return 0
+    fi
+    prepare || { echo "$NAME: cannot create the $ACCOUNT account." >&2; return 1; }
+    # The program switches to the service account itself ("run-as"), then
+    # becomes the supervisor: the pid stays the same.
+    # Le programme passe lui-même sur le compte du service (« run-as »), puis
+    # devient le superviseur : le pid reste le même.
+    cd "$DATA" || return 1
+    umask 027
+    TONEARMIX_DATA="$DATA" \
+        "$LIBDIR/ohscrobbler" run-as "$ACCOUNT" /bin/sh "$LIBDIR/tonearmix.sh" supervise \
+        </dev/null >/dev/null 2>&1 &
+    echo $! > "$PIDFILE"
+    sleep 1
+    if running; then
+        echo "$NAME started."
+    else
+        rm -f "$PIDFILE"
+        echo "$NAME did not start: see $DATA/state/supervisor.log." >&2
+        return 1
+    fi
+}
+
+stop() {
+    if ! running; then
+        rm -f "$PIDFILE"
+        echo "$NAME is not running."
+        return 0
+    fi
+    pid=$(cat "$PIDFILE")
+    # TERM to the supervisor, which stops the program cleanly first.
+    # TERM au superviseur, qui arrête d'abord proprement le programme.
+    kill "$pid"
+    i=0
+    while kill -0 "$pid" 2>/dev/null && [ $i -lt 30 ]; do sleep 1; i=$((i+1)); done
+    kill -9 "$pid" 2>/dev/null
+    rm -f "$PIDFILE"
+    echo "$NAME stopped."
+}
+
+case "$1" in
+    start) start ;;
+    stop) stop ;;
+    restart|force-reload) stop; start ;;
+    status)
+        if running; then echo "$NAME is running (pid $(cat "$PIDFILE"))."; else echo "$NAME is stopped."; exit 3; fi ;;
+    *) echo "Usage: $0 {start|stop|restart|status}" >&2; exit 2 ;;
+esac

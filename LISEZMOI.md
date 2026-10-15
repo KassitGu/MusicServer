@@ -1,22 +1,32 @@
-# Musique NAS
+# Tonearmix
 
-Serveur de musique léger pour NAS, Raspberry Pi et ordinateurs Linux, conçu pour les lecteurs réseau OpenHome / UPnP
-(lecteurs compatibles OpenHome). Il indexe une bibliothèque locale FLAC/MP3, la diffuse en UPnP avec
+Serveur de musique léger pour NAS, Raspberry Pi et ordinateurs Linux, conçu pour les lecteurs réseau OpenHome / UPnP.
+Il indexe une bibliothèque locale FLAC/MP3, la diffuse en UPnP avec
 des pochettes fiables et des badges de qualité, et envoie les écoutes à Last.fm.
 
-Un seul programme Go (bibliothèque standard uniquement) est partagé par trois éditions :
+> **À propos du nom.** *Tonearmix* réunit le **tonearm**, le bras de lecture d'une platine vinyle qui pose le diamant sur le
+> disque, et le **mix** des sources que le serveur rassemble : le dossier de musique, les disques externes et les autres NAS,
+> en une seule bibliothèque.
+
+Un seul programme Go (bibliothèque standard uniquement) est partagé par quatre éditions :
 
 | Édition | Cible | Paquet | Sources |
 |---|---|---|---|
-| QNAP | ARM et Intel (64 et 32 bits) ; un paquet pour QTS 5.0 ou plus, un pour QTS 4.2 à 4.5 | `.qpkg` | [`Serveur-Musique-QNAP-sources`](Serveur-Musique-QNAP-sources) |
-| Synology | x86_64, DSM 7.0 ou plus (ex. DS220+) | `.spk` | [`Serveur-Musique-Synology-sources`](Serveur-Musique-Synology-sources) |
-| Linux / Raspberry Pi | arm64 (Raspberry Pi 4 et 5) et amd64, systemd | `.deb`, `.tar.gz` | [`Serveur-Musique-Linux-sources`](Serveur-Musique-Linux-sources) |
+| QNAP | ARM et Intel (64 et 32 bits) ; un paquet pour QTS 5.0 ou plus, un pour QTS 4.2 à 4.5 | `.qpkg` | [`Tonearmix-QNAP-sources`](Tonearmix-QNAP-sources) |
+| Synology | Intel/AMD et ARM (64 et 32 bits) ; un paquet pour DSM 7, un pour DSM 6.2 | `.spk` | [`Tonearmix-Synology-sources`](Tonearmix-Synology-sources) |
+| Linux / Raspberry Pi | amd64, arm64 et armhf (Raspberry Pi OS 64 et 32 bits), systemd | `.deb`, `.tar.gz` | [`Tonearmix-Linux-sources`](Tonearmix-Linux-sources) |
+| WD My Cloud | My Cloud un disque de première génération (WDBCTL0020/0030/0040HWT), My Cloud OS 3, armv7 | `.tar.gz` | [`Tonearmix-WDMyCloud-sources`](Tonearmix-WDMyCloud-sources) |
 
 ## Fonctions
 
 - Serveur UPnP/DLNA, navigation par genre, artiste, album, derniers ajoutés et favoris.
-- Pochettes depuis les fichiers `cover`/`folder` (jpg, jpeg, png), avec badges de qualité
-  (MP3, CD, Studio Master) et fréquence / résolution.
+- Une seule bibliothèque à partir de plusieurs emplacements : le dossier de musique et jusqu'à 8 dossiers
+  supplémentaires (disque USB externe, dossier d'un autre NAS monté par le système). Un dossier inaccessible
+  garde ses morceaux jusqu'à son retour.
+- Pochettes depuis les fichiers `cover`/`folder` (jpg, jpeg, png), avec un bandeau de qualité de taille fixe
+  en bas à droite : logo du format (CD, Hi-Res Audio, MP3) et résolution (16/44.1, 24/96, DSD64…).
+- Pochettes d'albums manquantes cherchées en ligne (Cover Art Archive, 500 px, via MusicBrainz), gardées sur le
+  serveur ; les dossiers de musique ne sont jamais modifiés.
 - Compilations regroupées sous « Artistes divers ».
 - Recherche et rangées de favoris via l'interface JSON « media endpoint » des applications OpenHome.
 - Scrobbling Last.fm, titres les plus écoutés et récents, coups de cœur, biographie et artistes similaires.
@@ -31,7 +41,7 @@ Un seul programme Go (bibliothèque standard uniquement) est partagé par trois 
 
 ### Ce que fait le serveur
 
-Musique NAS fait du NAS une source de musique pour les lecteurs réseau OpenHome et leur application de contrôle. Il lit le dossier de musique, construit une bibliothèque d'albums, d'artistes, de genres et de playlists, et s'annonce sur le réseau local sous le nom choisi dans l'onglet **Serveur** (par défaut : **Musique NAS**). Les lecteurs jouent ensuite les fichiers directement depuis le NAS.
+Tonearmix fait du NAS une source de musique pour les lecteurs réseau OpenHome et leur application de contrôle. Il lit le dossier de musique, construit une bibliothèque d'albums, d'artistes, de genres et de playlists, et s'annonce sur le réseau local sous le nom choisi dans l'onglet **Serveur** (par défaut : **Tonearmix**). Les lecteurs jouent ensuite les fichiers directement depuis le NAS.
 
 Il suit aussi ce que jouent les lecteurs, pour envoyer les écoutes à Last.fm (scrobbling) et construire les rangées « Les plus écoutés » et « Écoutés récemment ».
 
@@ -105,8 +115,8 @@ Les paquets NAS ne sont pas signés et s'installent manuellement.
 
 Deux paquets distincts ; prendre celui qui correspond à la version de QTS du NAS :
 
-- QTS 5.0 ou plus : `install/MusiqueServeur_0.1.3_QTS5.qpkg`
-- QTS 4.2 à 4.5 : `install/MusiqueServeur_0.1.3_QTS4.qpkg`
+- QTS 5.0 ou plus : `install/Tonearmix_1.0.0_QTS5.qpkg`
+- QTS 4.2 à 4.5 : `install/Tonearmix_1.0.0_QTS4.qpkg`
 
 Chaque paquet refuse de s'installer sur l'autre génération de QTS et garde le programme adapté au processeur du NAS.
 
@@ -114,21 +124,48 @@ Chaque paquet refuse de s'installer sur l'autre génération de QTS et garde le 
 2. App Center > Installer manuellement : choisir le paquet ci-dessus.
 3. Ouvrir `http://<adresse-du-nas>:8790` et choisir le dossier de musique.
 
-### Synology (DSM 7)
+### Synology (DSM 7 ou DSM 6.2)
 
-1. Centre de paquets > Installation manuelle : choisir `install/MusiqueServeur_0.1.3_x86_64.spk`.
+Deux paquets distincts, chacun pour processeurs Intel/AMD et ARM ; prendre celui qui correspond à la version de DSM :
+
+- DSM 7 : `install/Tonearmix_1.0.0_DSM7.spk`
+- DSM 6.2 : `install/Tonearmix_1.0.0_DSM6.spk`
+
+1. Centre de paquets > Installation manuelle : choisir le paquet ci-dessus.
 2. Panneau de configuration > Dossier partagé > (dossier musique) > Modifier > Permissions >
-   Utilisateur interne du système : donner la lecture à **MusiqueServeur**.
+   Utilisateur interne du système : donner la lecture à **Tonearmix**.
 3. Ouvrir `http://<adresse-du-nas>:8790` et choisir le dossier de musique.
 
-### Linux / Raspberry Pi (64 bits)
+### Linux / Raspberry Pi
 
-1. Raspberry Pi OS, Debian, Ubuntu : `sudo apt install ./install/musique-nas_0.1.3_arm64.deb` (ou `_amd64.deb` sur un PC).
-   Autres distributions : décompresser `install/musique-nas_0.1.3_linux-<arch>.tar.gz` puis lancer `sudo ./install.sh`.
-2. Rendre le dossier de musique lisible par le compte **musique-nas** (un disque monté sous `/mnt` est le plus simple).
+1. Raspberry Pi OS, Debian, Ubuntu : `sudo apt install ./install/tonearmix_1.0.0_arm64.deb` (`_armhf.deb` sur
+   Raspberry Pi OS 32 bits, `_amd64.deb` sur un PC).
+   Autres distributions : décompresser `install/tonearmix_1.0.0_linux-<arch>.tar.gz` puis lancer `sudo ./install.sh`.
+2. Rendre le dossier de musique lisible par le compte **tonearmix** (un disque monté sous `/mnt` est le plus simple).
 3. Ouvrir `http://<adresse>:8790` et choisir le dossier de musique.
 
+### WD My Cloud (première génération, My Cloud OS 3)
+
+1. Tableau de bord du My Cloud > Paramètres > Réseau : activer **SSH**.
+2. Copier `install/tonearmix_1.0.0_wdmycloud-armv7.tar.gz` sur un partage (par exemple `Public`).
+3. En SSH, en root :
+   ```sh
+   cd /DataVolume/shares/Public
+   tar xzf tonearmix_1.0.0_wdmycloud-armv7.tar.gz
+   ./tonearmix_1.0.0_wdmycloud-armv7/install.sh
+   ```
+4. Ouvrir `http://<adresse>:8790` et choisir le dossier de musique. Pour redémarrer le service : `/etc/init.d/tonearmix restart`.
+
 Détails propres à chaque système : voir le LISEZMOI de chaque dossier de sources.
+
+### Mise à jour depuis Musique NAS (ancien nom, jusqu'à la 0.1.3)
+
+- **QNAP, Linux, WD My Cloud** : installer Tonearmix ; à son premier démarrage, il reprend les réglages de l'ancien
+  paquet (compte Last.fm, favoris, playlists, dossiers, index et pochettes, même identifiant de serveur), puis arrête
+  et désactive l'ancien, qui peut ensuite être désinstallé.
+- **Synology** : DSM sépare les données de chaque paquet. Télécharger une sauvegarde depuis l'onglet **Sauvegarde**
+  de l'ancien paquet, installer Tonearmix, restaurer le fichier dans son onglet **Sauvegarde**, puis désinstaller
+  l'ancien paquet.
 
 ## Last.fm
 
@@ -149,9 +186,10 @@ secret partagé sur la page de réglages et autoriser le compte. Ces identifiant
 Prérequis : Go, Python 3, `tar`, un shell POSIX. Chaque édition se construit en une commande :
 
 ```sh
-cd Serveur-Musique-QNAP-sources && ./build.sh      # version : package/control/qpkg.cfg (QPKG_VER)
-cd Serveur-Musique-Synology-sources && ./build.sh  # version : package/INFO (version)
-cd Serveur-Musique-Linux-sources && ./build.sh     # version : package/debian/control (Version)
+cd Tonearmix-QNAP-sources && ./build.sh      # version : package/control/qpkg.cfg (QPKG_VER)
+cd Tonearmix-Synology-sources && ./build.sh  # version : package/INFO (version)
+cd Tonearmix-Linux-sources && ./build.sh     # version : package/debian/control (Version)
+cd Tonearmix-WDMyCloud-sources && ./build.sh # version : package/VERSION
 ```
 
 La compilation lance `go vet` et les tests, produit des binaires statiques et écrit les paquets, avec leur
@@ -163,9 +201,10 @@ Les paquets prêts à installer de la version actuelle sont dans [`install/`](in
 
 ```
 install/                           paquets prêts à installer (.qpkg, .spk, .deb, .tar.gz)
-Serveur-Musique-QNAP-sources/      édition QNAP : build.sh, package/ (control, scripts, icônes, licences), scrobbler/ (Go)
-Serveur-Musique-Synology-sources/  édition Synology : build.sh, package/ (INFO, scripts, conf, icônes, licences), scrobbler/ (Go)
-Serveur-Musique-Linux-sources/     édition Linux / Raspberry Pi : build.sh, package/ (unité systemd, debian, install.sh, licences), scrobbler/ (Go)
+Tonearmix-QNAP-sources/      édition QNAP : build.sh, package/ (control, scripts, icônes, licences), scrobbler/ (Go)
+Tonearmix-Synology-sources/  édition Synology : build.sh, package/ (INFO, scripts, conf, icônes, licences), scrobbler/ (Go)
+Tonearmix-Linux-sources/     édition Linux / Raspberry Pi : build.sh, package/ (unité systemd, debian, install.sh, licences), scrobbler/ (Go)
+Tonearmix-WDMyCloud-sources/  édition WD My Cloud : build.sh, package/ (install.sh, script de démarrage, licences), scrobbler/ (Go)
 ```
 
 Le code Go de `scrobbler/` est identique dans toutes les éditions.
@@ -173,7 +212,7 @@ Le code Go de `scrobbler/` est identique dans toutes les éditions.
 ## Licence
 
 MIT, voir `package/licenses/MIT.txt`. Composants tiers (police Inter, OFL 1.1) listés dans
-`package/licenses/COMPONENTS.tsv`. QNAP, Synology, Raspberry Pi et Last.fm sont des marques de leurs
+`package/licenses/COMPONENTS.tsv`. QNAP, Synology, WD, My Cloud, Raspberry Pi et Last.fm sont des marques de leurs
 propriétaires ; ce projet n'y est pas affilié.
 
 ## Soutien

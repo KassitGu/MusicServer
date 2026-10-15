@@ -1,0 +1,4 @@
+component	version	licence	source	files
+ohscrobbler (the package program)	see package/INFO	MIT (MIT.txt)	this repository (scrobbler/)	ohscrobbler
+badge logos (built into ohscrobbler)	-	drawn for the project, MIT; Hi-Res in the spirit of the Hi-Res Audio logo (trademark of the Japan Audio Society); lettering: Nunito font, OFL-1.1 (OFL-1.1-Nunito.txt)	package/build-tools/badge_logos.py, package/build-tools/fonts/Nunito[wght].ttf	scrobbler/badges/mp3.png, cd.png, hires.png
+Inter Bold font (badge resolution text, pre-rendered)	4.0	OFL-1.1 (OFL-1.1-Inter.txt)	https://github.com/rsms/inter	scrobbler/badges/font.png, font.json

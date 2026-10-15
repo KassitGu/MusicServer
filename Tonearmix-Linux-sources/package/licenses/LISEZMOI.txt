@@ -1,0 +1,75 @@
+TONEARMIX - serveur de musique pour Linux et Raspberry Pi (arm64, amd64)
+==========================================================================
+
+Ce que c'est
+------------
+Un seul programme, ohscrobbler (licence MIT), lancé comme service systemd
+« tonearmix » sous son propre compte sans privilèges, et surveillé par le
+script tonearmix.sh. C'est à la fois :
+- le serveur de musique UPnP « Tonearmix » vu par les lecteurs OpenHome et
+  leur application de contrôle (port 49494, événements sur 49495). Il
+  indexe le dossier musique (FLAC, ALAC, AAC, MP3, WAV, AIFF, DSF), envoie
+  les fichiers tels quels (sans transcodage) et des pochettes réduites à
+  800 px avec un badge de qualité ;
+- le suivi des écoutes des lecteurs OpenHome, envoyées à Last.fm ;
+- une radio infinie facultative : quand un lecteur arrive au bout de sa
+  file, des morceaux ou un album entier similaires y sont ajoutés (onglet
+  Lecteurs) ;
+- la page de réglages et d'état http://<adresse>:8790/, en français ou en
+  anglais.
+
+Premiers pas
+------------
+1. Rendre la musique lisible par le compte « tonearmix ». Le plus simple
+   est un disque monté sous /mnt (par exemple /mnt/music, via /etc/fstab).
+   Les dossiers d'un compte personnel (/home/<utilisateur>,
+   /media/<utilisateur>) sont fermés aux autres comptes ; soit donner
+   l'accès :
+     sudo setfacl -m u:tonearmix:x /media/<utilisateur>
+     sudo setfacl -R -m u:tonearmix:rX /media/<utilisateur>/<disque>/Music
+   soit lancer le service sous votre propre compte :
+     sudo systemctl edit tonearmix
+       [Service]
+       User=<utilisateur>
+       Group=<utilisateur>
+2. Ouvrir http://<adresse>:8790/ et vérifier le dossier musique dans
+   l'onglet Serveur. Au premier lancement, un dossier « Music » ou
+   « Musique » est cherché sous /mnt, /media et /srv.
+3. Last.fm : créer une clé API sur https://www.last.fm/api/account/create
+   (nom d'application libre, Callback URL vide), coller la clé et le secret
+   dans l'onglet Last.fm, Enregistrer, puis « Se connecter à Last.fm ».
+
+Service
+-------
+  sudo systemctl status tonearmix      état
+  sudo systemctl restart tonearmix     redémarrage (aussi depuis l'onglet Serveur)
+  journalctl -u tonearmix              messages du superviseur
+
+Fichier de réglages : /var/lib/tonearmix/settings.conf
+--------------------------------------------------------
+  SHARES       racine sous laquelle le dossier musique peut être choisi
+               depuis la page (par défaut : la racine où la musique a été
+               trouvée, ou /mnt)
+  MUSIC_DIR    dossier musique
+  SERVER_NAME  nom affiché dans l'application de contrôle (par défaut :
+               Tonearmix)
+  INTERFACE    carte réseau ; vide = celle qui porte la route par défaut
+  SERVER_UDN   identifiant UPnP du serveur ; ne pas le modifier
+Après une modification : sudo systemctl restart tonearmix.
+
+Données (conservées lors d'une mise à jour) : /var/lib/tonearmix
+  scrobbler/  réglages de la page (config.json, mode 0600), scrobbles en
+              attente, classements Last.fm, écoutes locales, playlists
+  cache/      index de la bibliothèque, pochettes réduites, photos,
+              biographies (peut être supprimé : il est reconstruit)
+  logs/       journal du serveur
+  state/      état et journal du superviseur
+
+Ports : 8790 (page), 49494 (serveur UPnP), 49495 (événements de
+l'application), 1900/UDP (découverte SSDP). Les autoriser si un pare-feu
+est actif (ufw, firewalld).
+
+Licences
+--------
+Composants : COMPONENTS.tsv. Textes des licences : MIT.txt (copyright dans
+le .deb), OFL-1.1-Inter.txt (police des badges). Les logos des badges sont dessinés pour le projet ; celui du Hi-Res suit le logo Hi-Res Audio (marque de la Japan Audio Society).
