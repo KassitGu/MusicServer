@@ -1,4 +1,4 @@
-# Tonearmix
+# Tonearmix est un serveur de musique
 
 Serveur de musique léger pour NAS, Raspberry Pi et ordinateurs Linux, conçu pour les lecteurs réseau OpenHome / UPnP.
 Il indexe une bibliothèque locale FLAC/MP3, la diffuse en UPnP avec
