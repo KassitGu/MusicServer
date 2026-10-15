@@ -1,4 +1,4 @@
-# Tonearmix
+# Music NAS
 
 A lightweight music server for NAS devices, Raspberry Pi boards and Linux computers, designed for OpenHome / UPnP network
 players. It indexes a local FLAC/MP3 library, serves it over UPnP with
