@@ -14,10 +14,10 @@
 ######################################################################
 
 # The package carries one program per processor family in bin/: the one
-# matching this NAS becomes ohscrobbler and the others are removed
+# matching this NAS becomes tonearmix and the others are removed
 # (tonearmix.sh select_binary, also run at each start).
 # Le paquet contient un programme par famille de processeur dans bin/ : celui
-# qui correspond à ce NAS devient ohscrobbler et les autres sont supprimés
+# qui correspond à ce NAS devient tonearmix et les autres sont supprimés
 # (select_binary de tonearmix.sh, aussi lancé à chaque démarrage).
 pkg_post_install(){
     $CMD_CHMOD 755 ${SYS_QPKG_DIR}/tonearmix.sh

@@ -79,7 +79,7 @@ install_all() {
         echo "Tonearmix: settings taken over from musique-nas, now disabled (it can be removed)."
     fi
     mkdir -p "$LIBDIR"
-    install -m 755 "$SRC/ohscrobbler" "$SRC/tonearmix.sh" "$LIBDIR/"
+    install -m 755 "$SRC/tonearmix" "$SRC/tonearmix.sh" "$LIBDIR/"
     install -m 644 "$SRC/README.txt" "$SRC/LISEZMOI.txt" "$SRC/60-tonearmix-inotify.conf" "$LIBDIR/"
     rm -rf "$LIBDIR/licenses"
     cp -R "$SRC/licenses" "$LIBDIR/licenses"

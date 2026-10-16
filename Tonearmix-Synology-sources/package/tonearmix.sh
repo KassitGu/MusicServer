@@ -2,11 +2,11 @@
 # "Tonearmix" service for Synology DSM 7 (x86_64).
 # Service « Tonearmix » pour Synology DSM 7 (x86_64).
 #
-# Starts the package program (ohscrobbler), which is at the same time:
+# Starts the package program (tonearmix), which is at the same time:
 #  - the UPnP music server seen by the control app (port 49494);
 #  - the play tracker of the OpenHome players, for Last.fm scrobbling;
 #  - the settings and status page (port 8790).
-# Lance le programme du paquet (ohscrobbler), qui est à la fois :
+# Lance le programme du paquet (tonearmix), qui est à la fois :
 #  - le serveur de musique UPnP vu par l'application de contrôle (port 49494) ;
 #  - le suivi des écoutes des lecteurs OpenHome, pour Last.fm ;
 #  - la page de réglages et d'état (port 8790).
@@ -56,7 +56,7 @@ case "$(uname -m)" in
     i?86) ARCH=386 ;;
     *) ARCH=amd64 ;;
 esac
-SERVER="$TARGET/bin/ohscrobbler-$ARCH"
+SERVER="$TARGET/bin/tonearmix-$ARCH"
 SUPER_PID="$VAR/supervisor.pid"   # no write access to /var/run / pas de droit d'écriture sur /var/run
 SERVER_PID="$VAR/server.pid"
 UPNP_PORT=49494

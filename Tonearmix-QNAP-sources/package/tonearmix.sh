@@ -2,11 +2,11 @@
 # "Tonearmix" service for QNAP QTS (ARM or Intel, 32 or 64-bit).
 # Service « Tonearmix » pour QNAP QTS (ARM ou Intel, 32 ou 64 bits).
 #
-# Starts the package program (ohscrobbler), which is at the same time:
+# Starts the package program (tonearmix), which is at the same time:
 #  - the UPnP music server seen by the control app (port 49494);
 #  - the play tracker of the OpenHome players, for Last.fm scrobbling;
 #  - the settings and status page (port 8790).
-# Lance le programme du paquet (ohscrobbler), qui est à la fois :
+# Lance le programme du paquet (tonearmix), qui est à la fois :
 #  - le serveur de musique UPnP vu par l'application de contrôle (port 49494) ;
 #  - le suivi des écoutes des lecteurs OpenHome, pour Last.fm ;
 #  - la page de réglages et d'état (port 8790).
@@ -21,11 +21,11 @@
 # nom diffusé, redémarrage), après les avoir revérifiées.
 #
 # The package carries one static program per processor family (bin/); the
-# one matching this NAS is installed as ohscrobbler (select_binary). The
+# one matching this NAS is installed as tonearmix (select_binary). The
 # program also performs the switch to the unprivileged account ("run-as"
 # mode), so no other tool is needed.
 # Le paquet contient un programme statique par famille de processeur (bin/) ;
-# celui qui correspond à ce NAS est installé sous le nom ohscrobbler
+# celui qui correspond à ce NAS est installé sous le nom tonearmix
 # (select_binary). Le programme fait aussi le passage sur le compte non
 # privilégié (mode « run-as »), sans autre outil.
 #
@@ -44,7 +44,7 @@ LOGDIR="$DATA/logs"      # written by the program (unprivileged) / écrit par le
 STATEDIR="$DATA/state"   # written by the supervisor (root only) / écrit par le superviseur (root seulement)
 REQDIR="$DATA/scrobbler" # program settings and page requests / réglages du programme et demandes de la page
 CACHEDIR="$DATA/cache"   # library index, covers, photos / index de la bibliothèque, pochettes, photos
-SERVER="$QPKG_ROOT/ohscrobbler"
+SERVER="$QPKG_ROOT/tonearmix"
 SUPER_PID=/var/run/tonearmix-supervisor.pid
 SERVER_PID=/var/run/tonearmix-server.pid
 UPNP_PORT=49494
@@ -425,9 +425,10 @@ select_binary() {
         armv7*|armv8l) arch=arm ;;
         *) log "Unsupported processor: $(uname -m)."; return 1 ;;
     esac
-    if [ -f "$QPKG_ROOT/bin/ohscrobbler-$arch" ]; then
-        mv -f "$QPKG_ROOT/bin/ohscrobbler-$arch" "$SERVER" && chmod 755 "$SERVER"
-        rm -f "$QPKG_ROOT"/bin/ohscrobbler-*
+    if [ -f "$QPKG_ROOT/bin/tonearmix-$arch" ]; then
+        mv -f "$QPKG_ROOT/bin/tonearmix-$arch" "$SERVER" && chmod 755 "$SERVER"
+        rm -f "$QPKG_ROOT/ohscrobbler" # program file name of the first 1.0.0 build / nom du programme de la première construction 1.0.0
+        rm -f "$QPKG_ROOT"/bin/tonearmix-*
         rmdir "$QPKG_ROOT/bin" 2>/dev/null
     fi
     return 0

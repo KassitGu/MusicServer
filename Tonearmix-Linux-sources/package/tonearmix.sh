@@ -3,13 +3,13 @@
 # Superviseur du service « Tonearmix » pour Linux et Raspberry Pi (systemd).
 #
 # systemd runs "tonearmix.sh supervise" under the dedicated tonearmix account
-# (see tonearmix.service). This script starts the program (ohscrobbler),
+# (see tonearmix.service). This script starts the program (tonearmix),
 # which is at the same time:
 #  - the UPnP music server seen by the control app (port 49494);
 #  - the play tracker of the OpenHome players, for Last.fm scrobbling;
 #  - the settings and status page (port 8790).
 # systemd lance « tonearmix.sh supervise » sous le compte dédié tonearmix
-# (voir tonearmix.service). Ce script lance le programme (ohscrobbler), qui
+# (voir tonearmix.service). Ce script lance le programme (tonearmix), qui
 # est à la fois :
 #  - le serveur de musique UPnP vu par l'application de contrôle (port 49494) ;
 #  - le suivi des écoutes des lecteurs OpenHome, pour Last.fm ;
@@ -41,7 +41,7 @@ LOGDIR="$VAR/logs"       # program log / journal du programme
 STATEDIR="$VAR/state"    # supervisor state and log / état et journal du superviseur
 REQDIR="$VAR/scrobbler"  # program settings and page requests / réglages du programme et demandes de la page
 CACHEDIR="$VAR/cache"    # library index, covers, photos / index de la bibliothèque, pochettes, photos
-SERVER="$TARGET/ohscrobbler"
+SERVER="$TARGET/tonearmix"
 UPNP_PORT=49494
 PAGE_PORT=8790
 SUPERLOG="$STATEDIR/supervisor.log"

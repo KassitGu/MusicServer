@@ -1,5 +1,5 @@
 MIT licence, applying to:
-- ohscrobbler, the program of the "Tonearmix" package:
+- tonearmix, the program of the "Tonearmix" package:
   Copyright (c) 2026 the Tonearmix authors.
 
 Permission is hereby granted, free of charge, to any person obtaining

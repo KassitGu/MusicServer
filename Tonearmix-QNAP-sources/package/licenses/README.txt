@@ -3,7 +3,7 @@ TONEARMIX - music server for QNAP (ARM or Intel, QTS 5 or QTS 4.2-4.5)
 
 What it is
 ----------
-One program, ohscrobbler (MIT licence), started and watched by the service
+One program, tonearmix (MIT licence), started and watched by the service
 script tonearmix.sh. It is at the same time:
 - the UPnP music server "Tonearmix" seen by OpenHome players and their
   control app (port 49494, events on 49495). It indexes the music folder

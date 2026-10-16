@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draw the three badge logos: scrobbler/badges/cd.png, hires.png, mp3.png.
+"""Draw the three badge logos: server/badges/cd.png, hires.png, mp3.png.
 
 - CD: a silver disc drawn here.
 - Hi-Res: drawn here in the spirit of the Hi-Res Audio logo (trademark of
@@ -10,7 +10,7 @@ Lettering: Nunito (SIL Open Font License 1.1, fonts/Nunito[wght].ttf), a
 rounded font, soft and readable at small sizes; another one can be given
 with --font.
 
-Dessine les trois logos des badges : scrobbler/badges/cd.png, hires.png,
+Dessine les trois logos des badges : server/badges/cd.png, hires.png,
 mp3.png.
 
 - CD : un disque argenté dessiné ici.
@@ -22,7 +22,7 @@ Lettrage : Nunito (SIL Open Font License 1.1, fonts/Nunito[wght].ttf),
 police arrondie, douce et lisible en petite taille ; une autre peut être
 donnée avec --font.
 
-Usage: python3 badge_logos.py <scrobbler/badges folder> [--font <rounded .ttf>]   (needs Pillow)
+Usage: python3 badge_logos.py <server/badges folder> [--font <rounded .ttf>]   (needs Pillow)
 """
 import math, os, sys
 from PIL import Image, ImageDraw, ImageFont

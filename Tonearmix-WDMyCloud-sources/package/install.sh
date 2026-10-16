@@ -95,16 +95,16 @@ install_all() {
     mkdir -p "$LIBDIR"
     chown root:root "$BASE" "$LIBDIR"
     chmod 755 "$BASE" "$LIBDIR"
-    cp "$SRC/ohscrobbler" "$SRC/tonearmix.sh" "$SRC/README.txt" "$SRC/LISEZMOI.txt" "$LIBDIR/"
+    cp "$SRC/tonearmix" "$SRC/tonearmix.sh" "$SRC/README.txt" "$SRC/LISEZMOI.txt" "$LIBDIR/"
     rm -rf "$LIBDIR/licenses"
     cp -R "$SRC/licenses" "$LIBDIR/licenses"
     chmod -R u=rwX,go=rX "$LIBDIR"
-    chmod 755 "$LIBDIR/ohscrobbler" "$LIBDIR/tonearmix.sh"
+    chmod 755 "$LIBDIR/tonearmix" "$LIBDIR/tonearmix.sh"
 
     # Checks that the program runs on this kernel before going further.
     # Vérifie que le programme tourne sur ce noyau avant d'aller plus loin.
-    v=$("$LIBDIR/ohscrobbler" -version 2>&1) || die "the program does not run on this system: $v"
-    v=${v#ohscrobbler }
+    v=$("$LIBDIR/tonearmix" -version 2>&1) || die "the program does not run on this system: $v"
+    v=${v#tonearmix }
 
     sed "s|@LIBDIR@|$LIBDIR|g" "$SRC/tonearmix.init" > "$INIT"
     chmod 755 "$INIT"

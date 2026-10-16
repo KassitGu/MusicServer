@@ -3,7 +3,7 @@ TONEARMIX - music server for Linux and Raspberry Pi (arm64, amd64)
 
 What it is
 ----------
-One program, ohscrobbler (MIT licence), run as the systemd service
+One program, tonearmix (MIT licence), run as the systemd service
 "tonearmix" under its own unprivileged account, and watched by the
 script tonearmix.sh. It is at the same time:
 - the UPnP music server "Tonearmix" seen by OpenHome players and their

@@ -1,5 +1,5 @@
 #!/bin/sh
 # Makes the programs and the service script executable.
 # Rend les programmes et le script de service exécutables.
-chmod 755 "$SYNOPKG_PKGDEST"/bin/ohscrobbler-* "$SYNOPKG_PKGDEST/tonearmix.sh" 2>/dev/null
+chmod 755 "$SYNOPKG_PKGDEST"/bin/tonearmix-* "$SYNOPKG_PKGDEST/tonearmix.sh" 2>/dev/null
 exit 0

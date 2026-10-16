@@ -4,9 +4,8 @@ Serveur de musique léger pour NAS, Raspberry Pi et ordinateurs Linux, conçu po
 Il indexe une bibliothèque locale FLAC/MP3, la diffuse en UPnP avec
 des pochettes fiables et des badges de qualité, et envoie les écoutes à Last.fm.
 
-> **À propos du nom.** *Tonearmix* réunit le **tonearm**, le bras de lecture d'une platine vinyle qui pose le diamant sur le
-> disque, et le **mix** des sources que le serveur rassemble : le dossier de musique, les disques externes et les autres NAS,
-> en une seule bibliothèque.
+> **À propos du nom.** Tonearmix réunit le tonearm, le bras de lecture d'une platine vinyle qui pose le diamant sur le
+> disque, et le mix, qui renvoie à la diffusion d'un mix musical.
 
 Un seul programme Go (bibliothèque standard uniquement) est partagé par quatre éditions :
 
@@ -20,6 +19,10 @@ Un seul programme Go (bibliothèque standard uniquement) est partagé par quatre
 ## Fonctions
 
 - Serveur UPnP/DLNA, navigation par genre, artiste, album, derniers ajoutés et favoris.
+- Les lecteurs et applications qui ne prennent pas en charge OpenHome fonctionnent aussi, comme avec tout serveur
+  UPnP/DLNA standard, mais sans les fonctions OpenHome (accueil en rangées et recherche dans l'application de contrôle,
+  suivi des écoutes et scrobbling Last.fm, radio infinie, enregistrement de la file d'attente). La page de réglages les
+  liste à part, avec leur marque et leur modèle.
 - Une seule bibliothèque à partir de plusieurs emplacements : le dossier de musique et jusqu'à 8 dossiers
   supplémentaires (disque USB externe, dossier d'un autre NAS monté par le système). Un dossier inaccessible
   garde ses morceaux jusqu'à son retour.
@@ -158,15 +161,6 @@ Deux paquets distincts, chacun pour processeurs Intel/AMD et ARM ; prendre celui
 
 Détails propres à chaque système : voir le LISEZMOI de chaque dossier de sources.
 
-### Mise à jour depuis Musique NAS (ancien nom, jusqu'à la 0.1.3)
-
-- **QNAP, Linux, WD My Cloud** : installer Tonearmix ; à son premier démarrage, il reprend les réglages de l'ancien
-  paquet (compte Last.fm, favoris, playlists, dossiers, index et pochettes, même identifiant de serveur), puis arrête
-  et désactive l'ancien, qui peut ensuite être désinstallé.
-- **Synology** : DSM sépare les données de chaque paquet. Télécharger une sauvegarde depuis l'onglet **Sauvegarde**
-  de l'ancien paquet, installer Tonearmix, restaurer le fichier dans son onglet **Sauvegarde**, puis désinstaller
-  l'ancien paquet.
-
 ## Last.fm
 
 Créer un compte API sur <https://www.last.fm/api/account/create>, puis coller la clé API et le
@@ -201,17 +195,17 @@ Les paquets prêts à installer de la version actuelle sont dans [`install/`](in
 
 ```
 install/                           paquets prêts à installer (.qpkg, .spk, .deb, .tar.gz)
-Tonearmix-QNAP-sources/      édition QNAP : build.sh, package/ (control, scripts, icônes, licences), scrobbler/ (Go)
-Tonearmix-Synology-sources/  édition Synology : build.sh, package/ (INFO, scripts, conf, icônes, licences), scrobbler/ (Go)
-Tonearmix-Linux-sources/     édition Linux / Raspberry Pi : build.sh, package/ (unité systemd, debian, install.sh, licences), scrobbler/ (Go)
-Tonearmix-WDMyCloud-sources/  édition WD My Cloud : build.sh, package/ (install.sh, script de démarrage, licences), scrobbler/ (Go)
+Tonearmix-QNAP-sources/      édition QNAP : build.sh, package/ (control, scripts, icônes, licences), server/ (Go)
+Tonearmix-Synology-sources/  édition Synology : build.sh, package/ (INFO, scripts, conf, icônes, licences), server/ (Go)
+Tonearmix-Linux-sources/     édition Linux / Raspberry Pi : build.sh, package/ (unité systemd, debian, install.sh, licences), server/ (Go)
+Tonearmix-WDMyCloud-sources/  édition WD My Cloud : build.sh, package/ (install.sh, script de démarrage, licences), server/ (Go)
 ```
 
-Le code Go de `scrobbler/` est identique dans toutes les éditions.
+Le code Go de `server/` est identique dans toutes les éditions.
 
 ## Licence
 
-MIT, voir `package/licenses/MIT.txt`. Composants tiers (police Inter, OFL 1.1) listés dans
+MIT, voir `package/licenses/MIT.txt` dans chaque dossier de sources. Composants tiers (polices Inter et Nunito, OFL 1.1) listés dans
 `package/licenses/COMPONENTS.tsv`. QNAP, Synology, WD, My Cloud, Raspberry Pi et Last.fm sont des marques de leurs
 propriétaires ; ce projet n'y est pas affilié.
 

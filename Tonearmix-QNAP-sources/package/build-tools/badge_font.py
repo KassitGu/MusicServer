@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the badge font: scrobbler/badges/font.png and font.json,
+"""Generate the badge font: server/badges/font.png and font.json,
 from Inter Bold (OFL 1.1, Debian package fonts-inter 4.0).
 
 Why a pre-rendered atlas: the program uses only the Go standard library,
@@ -7,7 +7,7 @@ which cannot draw a vector font. As the badge has a fixed size, a single
 glyph size is enough; the glyphs are rendered here once, anti-aliased,
 then embedded in the program.
 
-Génère la police des badges : scrobbler/badges/font.png et font.json,
+Génère la police des badges : server/badges/font.png et font.json,
 à partir d'Inter Bold (OFL 1.1, paquet Debian fonts-inter 4.0).
 
 Pourquoi un atlas pré-rendu : le programme n'utilise que la bibliothèque
@@ -15,7 +15,7 @@ standard de Go, qui ne sait pas dessiner une police vectorielle. Le badge
 ayant une taille fixe, une seule taille de lettres suffit ; elles sont
 rendues ici une fois, lissées, puis intégrées au programme.
 
-Usage: python3 badge_font.py <Inter-Bold.otf> <scrobbler/badges folder>
+Usage: python3 badge_font.py <Inter-Bold.otf> <server/badges folder>
 """
 import json, math, sys
 from PIL import Image, ImageDraw, ImageFont

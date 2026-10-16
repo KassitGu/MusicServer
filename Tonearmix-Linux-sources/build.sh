@@ -34,7 +34,7 @@ export SOURCE_DATE_EPOCH
 
 echo "== ${NAME} ${VERSION} (${ARCHS})"
 
-cd "$ROOT/scrobbler"
+cd "$ROOT/server"
 if [ "${SKIP_TESTS:-}" != "1" ]; then
     go vet ./...
     go test ./...
@@ -43,12 +43,12 @@ rm -rf "$ROOT/build"
 mkdir -p "$ROOT/build" "$ROOT/dist"
 
 for ARCH in $ARCHS; do
-    BIN="$ROOT/build/ohscrobbler-$ARCH"
+    BIN="$ROOT/build/tonearmix-$ARCH"
     # 1. Program: static binary (no C library), the same one for every
     #    distribution of this architecture.
     # 1. Programme : binaire statique (sans bibliothèque C), le même pour
     #    toutes les distributions de cette architecture.
-    cd "$ROOT/scrobbler"
+    cd "$ROOT/server"
     GOARCH=$ARCH
     [ "$ARCH" = armhf ] && GOARCH=arm
     CGO_ENABLED=0 GOOS=linux GOARCH=$GOARCH GOARM=7 \
@@ -63,7 +63,7 @@ for ARCH in $ARCHS; do
     mkdir -p "$T/DEBIAN" "$T$LIBDIR" "$T$DOCDIR" "$T/usr/lib/systemd/system" "$T/usr/share/$NAME"
     sed "s/@ARCH@/$ARCH/" package/debian/control > "$T/DEBIAN/control"
     cp package/debian/postinst package/debian/prerm package/debian/postrm "$T/DEBIAN/"
-    cp "$BIN" "$T$LIBDIR/ohscrobbler"
+    cp "$BIN" "$T$LIBDIR/tonearmix"
     cp package/tonearmix.sh "$T$LIBDIR/"
     sed -e "s|@LIBDIR@|$LIBDIR|g" -e "s|@DOCDIR@|$DOCDIR|g" package/tonearmix.service \
         > "$T/usr/lib/systemd/system/$NAME.service"
@@ -72,7 +72,7 @@ for ARCH in $ARCHS; do
     cp package/licenses/MIT.txt "$T$DOCDIR/copyright"
     cp package/licenses/OFL-1.1-Inter.txt package/licenses/COMPONENTS.tsv "$T$DOCDIR/"
     chmod -R u=rwX,go=rX "$T"
-    chmod 755 "$T/DEBIAN/postinst" "$T/DEBIAN/prerm" "$T/DEBIAN/postrm" "$T$LIBDIR/ohscrobbler" "$T$LIBDIR/tonearmix.sh"
+    chmod 755 "$T/DEBIAN/postinst" "$T/DEBIAN/prerm" "$T/DEBIAN/postrm" "$T$LIBDIR/tonearmix" "$T$LIBDIR/tonearmix.sh"
     python3 package/mkpkg.py deb "$T" "dist/${NAME}_${VERSION}_${ARCH}.deb"
 
     # 3. .tar.gz: the same files and install.sh, which installs them in
@@ -81,14 +81,14 @@ for ARCH in $ARCHS; do
     #    /opt/tonearmix.
     A="$ROOT/build/tgz-$ARCH/${NAME}_${VERSION}_linux-${ARCH}"
     mkdir -p "$A"
-    cp "$BIN" "$A/ohscrobbler"
+    cp "$BIN" "$A/tonearmix"
     cp package/tonearmix.sh package/install.sh package/tonearmix.service package/60-tonearmix-inotify.conf "$A/"
     cp package/licenses/README.txt package/licenses/LISEZMOI.txt "$A/"
     cp -R package/licenses "$A/licenses"
     rm -f "$A/licenses/README.txt" "$A/licenses/LISEZMOI.txt"
     echo "$ARCH" > "$A/ARCH"
     chmod -R u=rwX,go=rX "$A"
-    chmod 755 "$A/ohscrobbler" "$A/tonearmix.sh" "$A/install.sh"
+    chmod 755 "$A/tonearmix" "$A/tonearmix.sh" "$A/install.sh"
     python3 package/mkpkg.py tgz "$A" "dist/${NAME}_${VERSION}_linux-${ARCH}.tar.gz"
 
     for f in "${NAME}_${VERSION}_${ARCH}.deb" "${NAME}_${VERSION}_linux-${ARCH}.tar.gz"; do

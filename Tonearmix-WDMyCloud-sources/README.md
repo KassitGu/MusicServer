@@ -14,6 +14,8 @@ Tonearmix turns the NAS into a music source for OpenHome network players and the
 
 It also follows what the players are playing, to send the plays to Last.fm (scrobbling) and to build the "Most played" and "Recently played" rows.
 
+Players and control apps that do not support the OpenHome standard also work with Tonearmix: they see it as a standard UPnP/DLNA server and browse and play the library with their own app. The features that rely on OpenHome are then not available to them: the rows home screen and the search of the control app, the following of their plays (Last.fm scrobbling, "Most played" rows), the endless radio and the saving of their play queue. The **Players** tab lists them separately, with their brand and model.
+
 Everything runs in one program on the NAS. Nothing is sent outside the local network except the Last.fm requests, the official artist website lookups on MusicBrainz and, if enabled, the artist photo lookups on Deezer (the artist's name only).
 
 ### In the control app
@@ -89,8 +91,12 @@ The music folder is indexed when the server starts. Files that have not changed 
 - **The server does not appear in the control app**: check that the NAS and the player are on the same network, and that ports 49494, 49495 (TCP) and 1900 (UDP) are not blocked.
 - **The library is empty**: check the music folder in the **Server** tab, and that the service account can read it.
 - **An extra folder is marked unreachable**: check that the disk is plugged in or that the other NAS is switched on and its folder still mounted; its tracks come back at the next indexing.
-- **A player is missing from the Players tab**: only OpenHome players are followed; a newly switched-on player can take up to 5 minutes to appear.
+- **A player is missing from the Players tab**: only OpenHome players are followed; other UPnP/DLNA players are listed below them, as not OpenHome. A newly switched-on player can take up to 5 minutes to appear.
 - **"The supervisor is no longer running"**: stop then start the application in the NAS application manager.
+
+### About the name
+
+Tonearmix joins the tonearm, the arm of a turntable that lays the stylus on the record, and the mix referring to the distribution of a musical mix.
 
 ## Installation
 
@@ -134,7 +140,7 @@ On the My Cloud, "The supervisor is no longer running" means: run `/etc/init.d/t
 | `/etc/init.d/tonearmix restart` | restart (also possible from the Server tab) |
 | `cat /DataVolume/tonearmix/data/state/supervisor.log` | supervisor messages |
 
-Data, kept on upgrade: `/DataVolume/tonearmix/data` (`settings.conf`, `scrobbler/` page settings and playlists, `cache/` index and covers, `logs/`, `state/`). Program: `/DataVolume/tonearmix/program`.
+Data, kept on upgrade: `/DataVolume/tonearmix/data` (`settings.conf`, `server/` page settings and playlists, `cache/` index and covers, `logs/`, `state/`). Program: `/DataVolume/tonearmix/program`.
 
 ### Memory
 
@@ -166,7 +172,7 @@ The version is read from `package/VERSION` only.
 
 | Path | Content |
 |---|---|
-| `scrobbler/` | the Go program (package `main`), identical in every edition |
+| `server/` | the Go program (package `main`), identical in every edition |
 | `package/tonearmix.sh` | supervisor: restarts the program if it stops and applies the requests made from the page |
 | `package/tonearmix.init` | SysV start-up script (`@LIBDIR@` is filled in at install time): account, data folder, memory limit, start and stop |
 | `package/install.sh` | installer run over SSH |

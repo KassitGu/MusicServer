@@ -81,16 +81,17 @@ start() {
         return 0
     fi
     prepare || { echo "$NAME: cannot create the $ACCOUNT account." >&2; return 1; }
-    # The program switches to the service account itself ("run-as"), then
-    # becomes the supervisor: the pid stays the same.
-    # Le programme passe lui-même sur le compte du service (« run-as »), puis
-    # devient le superviseur : le pid reste le même.
-    cd "$DATA" || return 1
+    # start-stop-daemon (part of the My Cloud system) starts the supervisor
+    # under the service account (--chuid: user, its group and its other
+    # groups, "share" included), in the background, and writes its pid.
+    # start-stop-daemon (fourni par le système du My Cloud) lance le
+    # superviseur sous le compte du service (--chuid : utilisateur, son
+    # groupe et ses autres groupes, « share » compris), en arrière-plan, et
+    # écrit son pid.
     umask 027
-    TONEARMIX_DATA="$DATA" \
-        "$LIBDIR/ohscrobbler" run-as "$ACCOUNT" /bin/sh "$LIBDIR/tonearmix.sh" supervise \
-        </dev/null >/dev/null 2>&1 &
-    echo $! > "$PIDFILE"
+    TONEARMIX_DATA="$DATA" start-stop-daemon --start --quiet --background \
+        --make-pidfile --pidfile "$PIDFILE" --chuid "$ACCOUNT" --chdir "$DATA" \
+        --exec /bin/sh -- "$LIBDIR/tonearmix.sh" supervise || return 1
     sleep 1
     if running; then
         echo "$NAME started."

@@ -14,6 +14,8 @@ Tonearmix fait du NAS une source de musique pour les lecteurs réseau OpenHome e
 
 Il suit aussi ce que jouent les lecteurs, pour envoyer les écoutes à Last.fm (scrobbling) et construire les rangées « Les plus écoutés » et « Écoutés récemment ».
 
+Les lecteurs et applications de contrôle qui ne prennent pas en charge la norme OpenHome fonctionnent aussi avec Tonearmix : ils le voient comme un serveur UPnP/DLNA standard, et parcourent et lisent la bibliothèque avec leur propre application. Les fonctions qui reposent sur OpenHome ne leur sont alors pas disponibles : l'accueil en rangées et la recherche de l'application de contrôle, le suivi de leurs écoutes (scrobbling Last.fm, rangées « Les plus écoutés »), la radio infinie et l'enregistrement de leur file d'attente. L'onglet **Lecteurs** les liste à part, avec leur marque et leur modèle.
+
 Tout tourne dans un seul programme sur le NAS. Rien ne sort du réseau local, sauf les demandes à Last.fm, la recherche des sites officiels des artistes sur MusicBrainz et, si elle est activée, la recherche des photos d'artistes sur Deezer (le nom de l'artiste seulement).
 
 ### Dans l'application de contrôle
@@ -89,8 +91,12 @@ Le dossier de musique est indexé au démarrage du serveur. Les fichiers inchang
 - **Le serveur n'apparaît pas dans l'application de contrôle** : vérifier que le NAS et le lecteur sont sur le même réseau, et que les ports 49494, 49495 (TCP) et 1900 (UDP) ne sont pas bloqués.
 - **La bibliothèque est vide** : vérifier le dossier de musique dans l'onglet **Serveur**, et que le compte du service peut le lire.
 - **Un dossier supplémentaire est marqué inaccessible** : vérifier que le disque est branché, ou que l'autre NAS est allumé et son dossier toujours monté ; ses morceaux reviennent à l'indexation suivante.
-- **Un lecteur manque dans l'onglet Lecteurs** : seuls les lecteurs OpenHome sont suivis ; un lecteur qui vient d'être allumé peut mettre jusqu'à 5 minutes à apparaître.
+- **Un lecteur manque dans l'onglet Lecteurs** : seuls les lecteurs OpenHome sont suivis ; les autres lecteurs UPnP/DLNA sont listés en dessous, comme non OpenHome. Un lecteur qui vient d'être allumé peut mettre jusqu'à 5 minutes à apparaître.
 - **« Le superviseur ne tourne plus »** : arrêter puis relancer l'application dans le gestionnaire d'applications du NAS.
+
+### À propos du nom
+
+Tonearmix réunit le tonearm, le bras de lecture d'une platine vinyle qui pose le diamant sur le disque, et le mix, qui renvoie à la diffusion d'un mix musical.
 
 ## Installation
 
@@ -134,7 +140,7 @@ Sur le My Cloud, « Le superviseur ne tourne plus » se règle avec `/etc/init.d
 | `/etc/init.d/tonearmix restart` | redémarrage (possible aussi depuis l'onglet Serveur) |
 | `cat /DataVolume/tonearmix/data/state/supervisor.log` | messages du superviseur |
 
-Données, conservées lors d'une mise à jour : `/DataVolume/tonearmix/data` (`settings.conf`, `scrobbler/` réglages de la page et playlists, `cache/` index et pochettes, `logs/`, `state/`). Programme : `/DataVolume/tonearmix/program`.
+Données, conservées lors d'une mise à jour : `/DataVolume/tonearmix/data` (`settings.conf`, `server/` réglages de la page et playlists, `cache/` index et pochettes, `logs/`, `state/`). Programme : `/DataVolume/tonearmix/program`.
 
 ### Mémoire
 
@@ -166,7 +172,7 @@ La version est lue uniquement dans `package/VERSION`.
 
 | Chemin | Contenu |
 |---|---|
-| `scrobbler/` | le programme Go (paquet `main`), identique dans toutes les éditions |
+| `server/` | le programme Go (paquet `main`), identique dans toutes les éditions |
 | `package/tonearmix.sh` | superviseur : relance le programme s'il s'arrête et applique les demandes faites depuis la page |
 | `package/tonearmix.init` | script de démarrage SysV (`@LIBDIR@` est rempli à l'installation) : compte, dossier de données, limite mémoire, démarrage et arrêt |
 | `package/install.sh` | installeur lancé en SSH |

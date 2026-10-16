@@ -27,7 +27,7 @@ OUT="${NAME}_${VERSION}_wdmycloud-armv7.tar.gz"
 
 echo "== ${NAME} ${VERSION} (WD My Cloud, armv7)"
 
-cd "$ROOT/scrobbler"
+cd "$ROOT/server"
 if [ "${SKIP_TESTS:-}" != "1" ]; then
     go vet ./...
     go test ./...
@@ -44,7 +44,7 @@ mkdir -p "$ROOT/build" "$ROOT/dist"
 A="$ROOT/build/${NAME}_${VERSION}_wdmycloud-armv7"
 mkdir -p "$A"
 CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 \
-    go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$A/ohscrobbler" .
+    go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$A/tonearmix" .
 cd "$ROOT"
 
 # 2. Archive: program, supervisor, start-up script, installer, notices and
@@ -56,7 +56,7 @@ cp package/licenses/README.txt package/licenses/LISEZMOI.txt "$A/"
 cp -R package/licenses "$A/licenses"
 rm -f "$A/licenses/README.txt" "$A/licenses/LISEZMOI.txt"
 chmod -R u=rwX,go=rX "$A"
-chmod 755 "$A/ohscrobbler" "$A/tonearmix.sh" "$A/tonearmix.init" "$A/install.sh"
+chmod 755 "$A/tonearmix" "$A/tonearmix.sh" "$A/tonearmix.init" "$A/install.sh"
 python3 package/mkpkg.py "$A" "dist/$OUT"
 
 ( cd dist && sha256sum "$OUT" 2>/dev/null > "$OUT.sha256" || shasum -a 256 "$OUT" > "$OUT.sha256" )

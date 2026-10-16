@@ -1,11 +1,11 @@
-# Music NAS
+# Tonearmix
 
 A lightweight music server for NAS devices, Raspberry Pi boards and Linux computers, designed for OpenHome / UPnP network
 players. It indexes a local FLAC/MP3 library, serves it over UPnP with
 reliable cover art and quality badges, and scrobbles what is played to Last.fm.
 
-> **About the name.** *Tonearmix* joins the **tonearm**, the arm of a turntable that lays the stylus on the record, and the
-> **mix** of sources the server brings together: the music folder, external disks and other NASes, into one library.
+> **About the name.** Tonearmix joins the tonearm, the arm of a turntable that lays the stylus on the record, and the mix
+> referring to the distribution of a musical mix.
 
 One Go program (standard library only) is shared by four editions:
 
@@ -19,6 +19,9 @@ One Go program (standard library only) is shared by four editions:
 ## Features
 
 - UPnP/DLNA media server, browsable by genre, artist, album, recently added and favourites.
+- Players and apps that do not support OpenHome also work, as with any standard UPnP/DLNA server, but without the
+  OpenHome features (rows home screen and search in the control app, play tracking and Last.fm scrobbling, endless radio,
+  saving of the play queue). The settings page lists them separately, with their brand and model.
 - One library from several places: the music folder plus up to 8 extra folders (external USB disk,
   folder of another NAS mounted by the system). An unreachable folder keeps its tracks until it is back.
 - Cover art from `cover`/`folder` image files (jpg, jpeg, png), with a fixed-size quality band in the
@@ -156,14 +159,6 @@ Two separate packages, each for Intel/AMD and ARM processors; take the one match
 
 Details for each system: see the README of each sources folder.
 
-### Upgrading from Musique NAS (former name, up to 0.1.3)
-
-- **QNAP, Linux, WD My Cloud**: install Tonearmix; on its first start it takes over the settings of the old
-  package (Last.fm account, favourites, playlists, folders, index and covers, same server identifier), then stops
-  and disables the old one, which can then be uninstalled.
-- **Synology**: DSM keeps each package's data apart. Download a backup from the **Backup** tab of the old package,
-  install Tonearmix, restore the file in its **Backup** tab, then uninstall the old package.
-
 ## Last.fm
 
 Create an API account at <https://www.last.fm/api/account/create>, then paste the API key and
@@ -198,17 +193,17 @@ Ready-to-install packages for the current version are in [`install/`](install).
 
 ```
 install/                           Ready-to-install packages (.qpkg, .spk, .deb, .tar.gz)
-Tonearmix-QNAP-sources/      QNAP edition: build.sh, package/ (control, scripts, icons, licences), scrobbler/ (Go)
-Tonearmix-Synology-sources/  Synology edition: build.sh, package/ (INFO, scripts, conf, icons, licences), scrobbler/ (Go)
-Tonearmix-Linux-sources/     Linux / Raspberry Pi edition: build.sh, package/ (systemd unit, debian, install.sh, licences), scrobbler/ (Go)
-Tonearmix-WDMyCloud-sources/  WD My Cloud edition: build.sh, package/ (install.sh, init script, licences), scrobbler/ (Go)
+Tonearmix-QNAP-sources/      QNAP edition: build.sh, package/ (control, scripts, icons, licences), server/ (Go)
+Tonearmix-Synology-sources/  Synology edition: build.sh, package/ (INFO, scripts, conf, icons, licences), server/ (Go)
+Tonearmix-Linux-sources/     Linux / Raspberry Pi edition: build.sh, package/ (systemd unit, debian, install.sh, licences), server/ (Go)
+Tonearmix-WDMyCloud-sources/  WD My Cloud edition: build.sh, package/ (install.sh, init script, licences), server/ (Go)
 ```
 
-The `scrobbler/` Go code is identical in every edition.
+The `server/` Go code is identical in every edition.
 
 ## Licence
 
-MIT, see `package/licenses/MIT.txt`. Third-party components (Inter font, OFL 1.1) are listed in
+MIT, see `package/licenses/MIT.txt` in each sources folder. Third-party components (Inter and Nunito fonts, OFL 1.1) are listed in
 `package/licenses/COMPONENTS.tsv`. QNAP, Synology, WD, My Cloud, Raspberry Pi and Last.fm are trademarks of their owners;
 this project is not affiliated with them.
 

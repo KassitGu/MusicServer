@@ -3,7 +3,7 @@ TONEARMIX - music server for the WD My Cloud (first generation, armv7)
 
 What it is
 ----------
-One program, ohscrobbler (MIT licence), started by /etc/init.d/tonearmix
+One program, tonearmix (MIT licence), started by /etc/init.d/tonearmix
 under its own unprivileged account, and watched by the script tonearmix.sh.
 It is at the same time:
 - the UPnP music server "Tonearmix" seen by OpenHome players and their

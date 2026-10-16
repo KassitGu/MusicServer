@@ -11,6 +11,11 @@
 # La version vient uniquement de package/INFO (« 1.0.0-0001 » : version du
 # programme, puis numéro de build DSM).
 set -eu
+# On macOS, tar would add "._*" files (Apple metadata) next to each file:
+# they must not end up in the package.
+# Sous macOS, tar ajouterait des fichiers « ._* » (métadonnées Apple) à côté
+# de chaque fichier : ils ne doivent pas se retrouver dans le paquet.
+export COPYFILE_DISABLE=1
 
 cd "$(dirname "$0")"
 ROOT=$(pwd)
@@ -36,7 +41,7 @@ echo "== ${NAME} ${DSM_VERSION}"
 
 # 1. Program: tests, then one static binary per processor family (no C library needed).
 # 1. Programme : tests, puis un binaire statique par famille de processeur (sans bibliothèque C).
-cd "$ROOT/scrobbler"
+cd "$ROOT/server"
 if [ "${SKIP_TESTS:-}" != "1" ]; then
     go vet ./...
     go test ./...
@@ -45,7 +50,7 @@ rm -rf "$ROOT/build"
 mkdir -p "$ROOT/build/bin" "$ROOT/dist"
 for arch in amd64 arm64 arm 386; do
     CGO_ENABLED=0 GOOS=linux GOARCH=$arch GOARM=7 \
-        go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$ROOT/build/bin/ohscrobbler-$arch" .
+        go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$ROOT/build/bin/tonearmix-$arch" .
 done
 cd "$ROOT"
 
@@ -55,11 +60,11 @@ echo "$EDITIONS" | while read -r EDITION DSM_MIN DSM_MAX GOARCHES; do
     OUT="$ROOT/dist/${NAME}_${VERSION}_${EDITION}.spk"
     mkdir -p "$PKG/bin" "$SPK"
     for arch in $(echo "$GOARCHES" | tr ',' ' '); do
-        cp "$ROOT/build/bin/ohscrobbler-$arch" "$PKG/bin/"
+        cp "$ROOT/build/bin/tonearmix-$arch" "$PKG/bin/"
     done
     cp package/tonearmix.sh "$PKG/"
     cp -R package/licenses "$PKG/licenses"
-    chmod 755 "$PKG"/bin/ohscrobbler-* "$PKG/tonearmix.sh"
+    chmod 755 "$PKG"/bin/tonearmix-* "$PKG/tonearmix.sh"
     tar -C "$PKG" --owner=0 --group=0 --numeric-owner -czf "$SPK/package.tgz" .
 
     cp -R package/scripts package/conf "$SPK/"

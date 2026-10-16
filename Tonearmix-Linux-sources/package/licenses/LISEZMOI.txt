@@ -3,7 +3,7 @@ TONEARMIX - serveur de musique pour Linux et Raspberry Pi (arm64, amd64)
 
 Ce que c'est
 ------------
-Un seul programme, ohscrobbler (licence MIT), lancé comme service systemd
+Un seul programme, tonearmix (licence MIT), lancé comme service systemd
 « tonearmix » sous son propre compte sans privilèges, et surveillé par le
 script tonearmix.sh. C'est à la fois :
 - le serveur de musique UPnP « Tonearmix » vu par les lecteurs OpenHome et
