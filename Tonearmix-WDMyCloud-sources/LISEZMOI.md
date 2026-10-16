@@ -1,10 +1,16 @@
 # Tonearmix pour WD My Cloud
 
-Serveur de musique pour le WD My Cloud de première génération (un disque, modèles WDBCTL), conçu pour les lecteurs réseau OpenHome et leur application de contrôle. Il sert la musique stockée sur le My Cloud, la présente en accueil par rangées avec favoris et recherche, et envoie vos écoutes à Last.fm.
+Serveur de musique pour le WD My Cloud, conçu pour les lecteurs réseau OpenHome et leur application de contrôle. Il sert la musique stockée sur le My Cloud, la présente en accueil par rangées avec favoris et recherche, et envoie vos écoutes à Last.fm.
 
-Le My Cloud de première génération n'a pas de magasin d'applications : cette édition est donc livrée en archive `.tar.gz` avec un installeur lancé en SSH. Tout tient dans un seul petit programme écrit en Go, avec la seule bibliothèque standard, sous son propre compte sans privilèges. Le programme est le même que dans les éditions QNAP, Synology et Linux ; seul l'empaquetage change.
+Tout tient dans un seul petit programme écrit en Go, avec la seule bibliothèque standard, sous son propre compte sans privilèges. Le programme est le même que dans les éditions QNAP, Synology et Linux ; seul l'empaquetage change.
 
-Cible : WD My Cloud WDBCTL0020HWT, WDBCTL0030HWT et WDBCTL0040HWT (My Cloud OS 3, firmware v04, processeur ARMv7 32 bits, 256 Mo de mémoire). Les My Cloud plus récents sous My Cloud OS 5 ne sont pas couverts par cette archive.
+| My Cloud | Paquet |
+|---|---|
+| My Cloud OS 5 : My Cloud (un disque, deuxième génération), Mirror Gen 2, EX2 Ultra, EX2100, EX4100, DL2100, DL4100, PR2100, PR4100, WD Cloud | application `tonearmix_<version>_wdmycloud-os5-<modèle>.bin`, installée depuis le tableau de bord |
+| My Cloud OS 3, firmware 2.x : les mêmes modèles, ainsi que EX2, EX4, Mirror (première génération) | application `tonearmix_<version>_wdmycloud-os3-<modèle>.bin`, installée depuis le tableau de bord |
+| Première génération, un disque (WDBCTL0020HWT, WDBCTL0030HWT, WDBCTL0040HWT ; firmware v04, sans applications) | archive `tonearmix_<version>_wdmycloud-armv7.tar.gz`, installée en SSH |
+
+Les DL2100, DL4100, PR2100 et PR4100 ont un processeur Intel 64 bits, les autres modèles un processeur ARM 32 bits ; chaque paquet d'application contient le programme de son modèle. Un paquet d'application est lié à un modèle et à une génération d'OS : le tableau de bord refuse le paquet d'un autre modèle.
 
 ## Aide
 
@@ -100,6 +106,16 @@ Tonearmix réunit le tonearm, le bras de lecture d'une platine vinyle qui pose l
 
 ## Installation
 
+### My Cloud OS 5 et OS 3 (firmware 2.x)
+
+1. Relever le modèle et la version du firmware dans le tableau de bord (**Paramètres > Mise à jour du firmware**), puis prendre le fichier `.bin` correspondant : `os5` pour le firmware 5, `os3` pour le firmware 2.x.
+2. Dans le tableau de bord, ouvrir **Applications**, cliquer sur l'icône d'installation manuelle d'une application et choisir le fichier `.bin`.
+3. Cliquer sur **Tonearmix** dans la liste des applications, puis sur son lien, pour ouvrir la page de réglages : `http://<adresse>:8790/`.
+
+Le service démarre tout de suite et à chaque démarrage du NAS ; il s'arrête et se relance depuis la page de l'application. Mise à jour : installer de la même façon le `.bin` de la nouvelle version. Le programme est dans `Nas_Prog/tonearmix` sur le premier volume, les données dans `Nas_Prog/_tonearmix`, hors des partages ; une mise à jour ou une suppression de l'application garde les données. Pour les effacer aussi, supprimer l'application, puis lancer `rm -rf /mnt/HD/HD_a2/Nas_Prog/_tonearmix` en SSH.
+
+### Première génération (firmware v04)
+
 1. Dans le tableau de bord du My Cloud, ouvrir **Paramètres > Réseau** et activer **SSH**. WD affiche alors l'identifiant à utiliser.
 2. Copier l'archive dans un partage du My Cloud (par exemple le partage `Public`, depuis le Finder ou l'Explorateur Windows).
 3. Se connecter en SSH et lancer l'installeur :
@@ -119,9 +135,9 @@ Mise à jour : décompresser la nouvelle archive et lancer son `install.sh` ; r�
 
 ### Dossier musique
 
-Au premier lancement, le serveur cherche un dossier `Music`, `Musique` ou `Musiques` dans les partages (`/DataVolume/shares/<partage>`), puis le dossier `Shared Music` d'un partage ; le dossier se change ensuite dans l'onglet **Serveur**. La page propose les dossiers situés sous la racine `SHARES` de `/DataVolume/tonearmix/data/settings.conf` (`/DataVolume/shares` par défaut).
+Au premier lancement, le serveur cherche un dossier `Music`, `Musique` ou `Musiques` dans les partages, puis le dossier `Shared Music` d'un partage ; le dossier se change ensuite dans l'onglet **Serveur**. La page propose les dossiers situés sous la racine `SHARES` de `settings.conf` dans le dossier de données : `/shares` pour l'application, `/DataVolume/shares` pour la première génération.
 
-Le service tourne sous le compte `tonearmix`, dans le groupe `share` du My Cloud. Si la page indique que le compte ne peut pas lire le dossier, lancer `chmod -R o+rX "/DataVolume/shares/<partage>/<dossier>"` en SSH.
+Le service tourne sous le compte `tonearmix` (sur la première génération, dans le groupe `share` du My Cloud). Quand le système n'offre pas d'outil pour créer un compte, l'application tourne sous `nobody`. Si la page indique que le compte ne peut pas lire le dossier, lancer `chmod -R o+rX "<partage>/<dossier>"` en SSH.
 
 ### Last.fm
 
@@ -132,7 +148,11 @@ La clé et le secret restent sur le My Cloud, dans un fichier lisible par le seu
 
 ## Service
 
-Sur le My Cloud, « Le superviseur ne tourne plus » se règle avec `/etc/init.d/tonearmix restart` en SSH, puis en lisant le journal du superviseur s'il s'arrête encore.
+**Application (OS 5, OS 3) :** « Le superviseur ne tourne plus » se règle en arrêtant puis en relançant Tonearmix sur sa page d'application du tableau de bord.
+
+Données, conservées lors d'une mise à jour : `/mnt/HD/HD_a2/Nas_Prog/_tonearmix/data` (`settings.conf`, `server/` réglages de la page et playlists, `cache/` index et pochettes, `logs/`, `state/` avec `supervisor.log`).
+
+**Première génération :** « Le superviseur ne tourne plus » se règle avec `/etc/init.d/tonearmix restart` en SSH, puis en lisant le journal du superviseur s'il s'arrête encore.
 
 | Commande (en SSH, en root) | Usage |
 |---|---|
@@ -140,11 +160,11 @@ Sur le My Cloud, « Le superviseur ne tourne plus » se règle avec `/etc/init.d
 | `/etc/init.d/tonearmix restart` | redémarrage (possible aussi depuis l'onglet Serveur) |
 | `cat /DataVolume/tonearmix/data/state/supervisor.log` | messages du superviseur |
 
-Données, conservées lors d'une mise à jour : `/DataVolume/tonearmix/data` (`settings.conf`, `server/` réglages de la page et playlists, `cache/` index et pochettes, `logs/`, `state/`). Programme : `/DataVolume/tonearmix/program`.
+Données, conservées lors d'une mise à jour : `/DataVolume/tonearmix/data` (même contenu). Programme : `/DataVolume/tonearmix/program`.
 
 ### Mémoire
 
-Le My Cloud a 256 Mo de mémoire, partagés avec les services WD. Le script de démarrage donne au programme une limite mémoire souple (`GOMEMLIMIT=96MiB`, `GOGC=50`) : il libère la mémoire plus tôt au lieu de grossir. Pour changer ces valeurs, écrire les deux lignes `GOMEMLIMIT=...` et `GOGC=...` dans `/DataVolume/tonearmix/defaults` (fichier appartenant à root), puis redémarrer. Si le My Cloud devient lent, désactiver le serveur multimédia DLNA intégré (**Paramètres > Multimédia**) libère de la mémoire ; l'application de contrôle n'en a pas besoin.
+Les modèles ARM ont peu de mémoire (256 Mo pour la première génération, de 512 Mo à 1 Go pour les autres), partagée avec les services WD. Le script de démarrage donne au programme une limite mémoire souple : il libère la mémoire plus tôt au lieu de grossir. Valeurs par défaut : `GOMEMLIMIT=96MiB` et `GOGC=50` sur la première génération, `GOMEMLIMIT=160MiB` et `GOGC=50` pour l'application ARM, aucune limite sur les modèles Intel. Pour les changer, écrire les deux lignes `GOMEMLIMIT=...` et `GOGC=...` dans un fichier nommé `defaults`, appartenant à root, à côté du dossier de données (`/DataVolume/tonearmix/defaults` ou `/mnt/HD/HD_a2/Nas_Prog/_tonearmix/defaults`), puis redémarrer. Si le My Cloud devient lent, désactiver le serveur multimédia DLNA intégré (**Paramètres > Multimédia**) libère de la mémoire ; l'application de contrôle n'en a pas besoin.
 
 ## Ports réseau
 
@@ -155,16 +175,18 @@ Le My Cloud a 256 Mo de mémoire, partagés avec les services WD. Le script de d
 | 49495/TCP | événements pour l'application de contrôle |
 | 1900/UDP | découverte SSDP (partagée avec le serveur DLNA intégré) |
 
-Le My Cloud ne reçoit plus de mises à jour de sécurité : le garder sur le réseau de la maison et laisser l'accès à distance désactivé.
+La première génération et My Cloud OS 3 ne reçoivent plus de mises à jour de sécurité : garder le My Cloud sur le réseau de la maison et laisser l'accès à distance désactivé.
 
 ## Construire depuis les sources
 
 Il faut Go 1.24 ou plus récent, Python 3 et un shell POSIX. Fonctionne sous Linux et macOS.
 
 ```sh
-./build.sh                  # lance les tests, puis construit l'archive dans dist/
+./build.sh                  # lance les tests, puis construit tous les paquets dans dist/
 SKIP_TESTS=1 ./build.sh     # construction seule
 ```
+
+`dist/` contient alors l'archive de la première génération et un paquet d'application `.bin` par modèle et génération d'OS, chacun avec son `.sha256`. Les paquets d'application sont assemblés par `package/mkapkg.py`, avec la seule bibliothèque standard de Python : aucun outil WD n'est nécessaire.
 
 La version est lue uniquement dans `package/VERSION`.
 
@@ -173,11 +195,13 @@ La version est lue uniquement dans `package/VERSION`.
 | Chemin | Contenu |
 |---|---|
 | `server/` | le programme Go (paquet `main`), identique dans toutes les éditions |
-| `package/tonearmix.sh` | superviseur : relance le programme s'il s'arrête et applique les demandes faites depuis la page |
-| `package/tonearmix.init` | script de démarrage SysV (`@LIBDIR@` est rempli à l'installation) : compte, dossier de données, limite mémoire, démarrage et arrêt |
-| `package/install.sh` | installeur lancé en SSH |
-| `package/VERSION` | version de l'archive et du programme |
+| `package/tonearmix.sh` | superviseur (toutes les générations) : relance le programme s'il s'arrête et applique les demandes faites depuis la page |
+| `package/tonearmix.init` | script de démarrage SysV de la première génération (`@LIBDIR@` est rempli à l'installation) : compte, dossier de données, limite mémoire, démarrage et arrêt |
+| `package/install.sh` | installeur de la première génération, lancé en SSH |
+| `package/apkg/` | application My Cloud OS 3 et OS 5 : `apkg.rc` (nom, version, description), scripts lancés par le NAS (`preinst.sh`, `install.sh`, `init.sh`, `start.sh`, `stop.sh`, `clean.sh`, `remove.sh`) et la page de l'application `web/index.html` |
+| `package/VERSION` | version des paquets et du programme |
 | `package/mkpkg.py` | assemblage du `.tar.gz` avec la bibliothèque standard de Python |
+| `package/mkapkg.py` | assemblage des paquets d'application `.bin` avec la bibliothèque standard de Python (organisation des paquets WD, en-tête par modèle, `apkg.xml`, `apkg.sign`) |
 | `package/build-tools/badge_font.py` | régénère `badges/font.png` et `font.json` à partir d'Inter Bold (nécessite Pillow) |
 | `package/build-tools/badge_logos.py` | redessine les logos originaux des badges `badges/cd.png`, `hires.png` et `mp3.png` (nécessite Pillow) |
 | `package/build-tools/app_icons.py` | dessine l'icône de l'application Tonearmix dans toutes les tailles (icônes UPnP, App Center, Centre de paquets ; nécessite Pillow) |

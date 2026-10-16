@@ -1,0 +1,19 @@
+Package:	tonearmix
+Version:	@VERSION@
+Packager:	Tonearmix authors
+Email:
+Homepage:	https://github.com/KassitGu/MusicServer
+Description:	UPnP music server for OpenHome players, with Last.fm scrobbling
+Icon:	tonearmix.png
+AddonShowName:	Tonearmix
+AddonIndexPage:	index.html
+AddonUsedPort:
+InstDepend:
+InstConflict:
+StartDepend:
+StartConflict:
+CenterType:	1
+UserControl:	1
+MinFWVer:	@MINFW@
+MaxFWVer:
+IndividualFlag:	0

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tonearmix</title>
+<style>body{font-family:sans-serif;margin:2em;color:#222;background:#fff}a{color:#06c}</style>
+</head>
+<body>
+<!-- The settings page is served by Tonearmix itself, on port 8790 of the
+     NAS. / La page de réglages est servie par Tonearmix lui-même, sur le
+     port 8790 du NAS. -->
+<p id="msg"><a id="go" href="#">Open Tonearmix</a></p>
+<script>
+var url = location.protocol.replace("https", "http") + "//" + location.hostname + ":8790/";
+var fr = (navigator.language || "").toLowerCase().indexOf("fr") === 0;
+var a = document.getElementById("go");
+a.href = url;
+a.textContent = fr ? "Ouvrir Tonearmix" : "Open Tonearmix";
+document.documentElement.lang = fr ? "fr" : "en";
+(window.top || window).location.href = url;
+</script>
+</body>
+</html>

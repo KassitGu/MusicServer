@@ -1,16 +1,17 @@
 #!/bin/sh
-# "Tonearmix" service supervisor for the WD My Cloud (first generation).
-# Superviseur du service « Tonearmix » pour le WD My Cloud (première
-# génération).
+# "Tonearmix" service supervisor for the WD My Cloud.
+# Superviseur du service « Tonearmix » pour le WD My Cloud.
 #
-# The start-up script /etc/init.d/tonearmix runs "tonearmix.sh supervise"
-# under the dedicated tonearmix account (through start-stop-daemon --chuid).
+# The start-up script runs "tonearmix.sh supervise" under the dedicated
+# tonearmix account: /etc/init.d/tonearmix on the first generation, start.sh
+# of the application on My Cloud OS 3 and OS 5.
 # This script starts the program (tonearmix), which is at the same time:
 #  - the UPnP music server seen by the control app (port 49494);
 #  - the play tracker of the OpenHome players, for Last.fm scrobbling;
 #  - the settings and status page (port 8790).
-# Le script de démarrage /etc/init.d/tonearmix lance « tonearmix.sh
-# supervise » sous le compte dédié tonearmix (par start-stop-daemon --chuid).
+# Le script de démarrage lance « tonearmix.sh supervise » sous le compte
+# dédié tonearmix : /etc/init.d/tonearmix sur la première génération,
+# start.sh de l'application sous My Cloud OS 3 et OS 5.
 # Ce script lance le programme (tonearmix), qui est à la fois :
 #  - le serveur de musique UPnP vu par l'application de contrôle (port 49494) ;
 #  - le suivi des écoutes des lecteurs OpenHome, pour Last.fm ;
@@ -26,16 +27,21 @@
 # La page de réglages repose sur ce protocole (fichiers request-*,
 # state/state.txt), commun avec les éditions NAS.
 #
-# Settings / réglages : /DataVolume/tonearmix/data/settings.conf.
+# Settings / réglages : <data>/settings.conf.
 
 PKG_NAME="tonearmix"
 TARGET=$(cd "$(dirname "$0")" && pwd)
 # Data on the data volume, not on the system partition: a firmware update
-# rewrites the system partition, the data volume is kept.
+# rewrites the system partition, the data volume is kept. The start-up
+# script gives the data folder and the root of the shares, which differ
+# between the first generation and the application of My Cloud OS 3 / OS 5.
 # Données sur le volume de données, pas sur la partition système : une mise
 # à jour du firmware réécrit la partition système, le volume de données est
-# conservé.
+# conservé. Le script de démarrage donne le dossier de données et la racine
+# des partages, qui diffèrent entre la première génération et l'application
+# de My Cloud OS 3 / OS 5.
 VAR="${TONEARMIX_DATA:-/DataVolume/$PKG_NAME/data}"
+SHARES_DEFAULT="${TONEARMIX_SHARES:-/DataVolume/shares}"
 
 SETTINGS="$VAR/settings.conf"
 SECTION="MusicServer"
@@ -84,20 +90,20 @@ set_setting() {
 # (réglage SHARES). Jamais « / » : la page ne propose que des dossiers sous
 # cette racine.
 shares_root() {
-    r=$(setting SHARES /DataVolume/shares)
+    r=$(setting SHARES "$SHARES_DEFAULT")
     r=${r%/}
-    echo "${r:-/DataVolume/shares}"
+    echo "${r:-$SHARES_DEFAULT}"
 }
 
 # First run only: looks for a music folder in the shares of the My Cloud
-# (/DataVolume/shares/<share>), including the "Shared Music" folder of the
-# Public share, and returns "root folder". Falls back to the shares root.
+# (<shares root>/<share>), including the "Shared Music" folder of the Public
+# share, and returns "root folder". Falls back to the shares root.
 # Premier lancement seulement : cherche un dossier musique dans les partages
-# du My Cloud (/DataVolume/shares/<partage>), dont le dossier « Shared Music »
-# du partage Public, et renvoie « racine dossier ». Repli sur la racine des
-# partages.
+# du My Cloud (<racine des partages>/<partage>), dont le dossier « Shared
+# Music » du partage Public, et renvoie « racine dossier ». Repli sur la
+# racine des partages.
 detect_music() {
-    root=/DataVolume/shares
+    root=$SHARES_DEFAULT
     for d in "$root"/Music "$root"/Musique "$root"/music "$root"/musique \
              "$root"/*/Music "$root"/*/Musique "$root"/*/music "$root"/*/musique \
              "$root"/*/Musiques "$root"/*/"Shared Music"; do

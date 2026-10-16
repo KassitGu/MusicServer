@@ -1,10 +1,16 @@
 # Tonearmix for the WD My Cloud
 
-A music server for the first-generation WD My Cloud (single bay, WDBCTL models), built for OpenHome network players and their control app. It serves the music stored on the My Cloud, shows it as a home screen in rows with favourites and search, and scrobbles what you play to Last.fm.
+A music server for the WD My Cloud, built for OpenHome network players and their control app. It serves the music stored on the My Cloud, shows it as a home screen in rows with favourites and search, and scrobbles what you play to Last.fm.
 
-The first-generation My Cloud has no application store, so this edition ships as a `.tar.gz` archive with an installer run over SSH. Everything runs in one small program written in Go with the standard library only, under its own unprivileged account. The program is the same as in the QNAP, Synology and Linux editions; only the packaging differs.
+Everything runs in one small program written in Go with the standard library only, under its own unprivileged account. The program is the same as in the QNAP, Synology and Linux editions; only the packaging differs.
 
-Target: WD My Cloud WDBCTL0020HWT, WDBCTL0030HWT and WDBCTL0040HWT (My Cloud OS 3, firmware v04, 32-bit ARMv7 processor, 256 MB of RAM). Later My Cloud models with My Cloud OS 5 are not covered by this archive.
+| My Cloud | Package |
+|---|---|
+| My Cloud OS 5: My Cloud (single bay, second generation), Mirror Gen 2, EX2 Ultra, EX2100, EX4100, DL2100, DL4100, PR2100, PR4100, WD Cloud | application `tonearmix_<version>_wdmycloud-os5-<model>.bin`, installed from the dashboard |
+| My Cloud OS 3, firmware 2.x: the same models, and EX2, EX4, Mirror (first generation) | application `tonearmix_<version>_wdmycloud-os3-<model>.bin`, installed from the dashboard |
+| First generation, single bay (WDBCTL0020HWT, WDBCTL0030HWT, WDBCTL0040HWT; firmware v04, no applications) | archive `tonearmix_<version>_wdmycloud-armv7.tar.gz`, installed over SSH |
+
+The DL2100, DL4100, PR2100 and PR4100 have a 64-bit Intel processor, the other models a 32-bit ARM processor; each application package holds the program for its model. An application package is tied to one model and one OS generation: the dashboard refuses the package of another model.
 
 ## Help
 
@@ -100,6 +106,16 @@ Tonearmix joins the tonearm, the arm of a turntable that lays the stylus on the 
 
 ## Installation
 
+### My Cloud OS 5 and OS 3 (firmware 2.x)
+
+1. Find the model and the firmware version in the dashboard (**Settings > Firmware Update**), then take the matching `.bin` file: `os5` for firmware 5, `os3` for firmware 2.x.
+2. In the dashboard, open **Apps**, click the icon to install an app manually and choose the `.bin` file.
+3. Click **Tonearmix** in the list of applications, then its link, to open the settings page: `http://<address>:8790/`.
+
+The service starts at once and at every start of the NAS; it can be stopped and started again from the application page. Upgrade: install the `.bin` of the new version in the same way. The program is in `Nas_Prog/tonearmix` on the first volume, the data in `Nas_Prog/_tonearmix`, outside the shares; upgrading or removing the application keeps the data. To delete it as well, remove the application, then run `rm -rf /mnt/HD/HD_a2/Nas_Prog/_tonearmix` over SSH.
+
+### First generation (firmware v04)
+
 1. In the My Cloud dashboard, open **Settings > Network** and turn **SSH** on. WD shows the login to use at that moment.
 2. Copy the archive to a share of the My Cloud (for example the `Public` share, from the Finder or Windows Explorer).
 3. Log in over SSH and run the installer:
@@ -119,9 +135,9 @@ Upgrade: unpack the new archive and run its `install.sh`; settings, index and pl
 
 ### Music folder
 
-On the first start the server looks for a `Music`, `Musique` or `Musiques` folder in the shares (`/DataVolume/shares/<share>`), then for the `Shared Music` folder of a share; the folder can then be changed in the **Server** tab. The page offers folders below the `SHARES` root of `/DataVolume/tonearmix/data/settings.conf` (`/DataVolume/shares` by default).
+On the first start the server looks for a `Music`, `Musique` or `Musiques` folder in the shares, then for the `Shared Music` folder of a share; the folder can then be changed in the **Server** tab. The page offers folders below the `SHARES` root of `settings.conf` in the data folder: `/shares` for the application, `/DataVolume/shares` for the first generation.
 
-The service runs as the `tonearmix` account, in the `share` group of the My Cloud. If the page says that the account cannot read the folder, run `chmod -R o+rX "/DataVolume/shares/<share>/<folder>"` over SSH.
+The service runs as the `tonearmix` account (on the first generation, in the `share` group of the My Cloud). When the system offers no tool to create an account, the application runs as `nobody`. If the page says that the account cannot read the folder, run `chmod -R o+rX "<share>/<folder>"` over SSH.
 
 ### Last.fm
 
@@ -132,7 +148,11 @@ The key and secret stay on the My Cloud, in a file readable by the service accou
 
 ## Service
 
-On the My Cloud, "The supervisor is no longer running" means: run `/etc/init.d/tonearmix restart` over SSH, then read the supervisor log if it stops again.
+**Application (OS 5, OS 3):** "The supervisor is no longer running" means: stop then start Tonearmix on its application page of the dashboard.
+
+Data, kept on upgrade: `/mnt/HD/HD_a2/Nas_Prog/_tonearmix/data` (`settings.conf`, `server/` page settings and playlists, `cache/` index and covers, `logs/`, `state/` with `supervisor.log`).
+
+**First generation:** "The supervisor is no longer running" means: run `/etc/init.d/tonearmix restart` over SSH, then read the supervisor log if it stops again.
 
 | Command (over SSH, as root) | Use |
 |---|---|
@@ -140,11 +160,11 @@ On the My Cloud, "The supervisor is no longer running" means: run `/etc/init.d/t
 | `/etc/init.d/tonearmix restart` | restart (also possible from the Server tab) |
 | `cat /DataVolume/tonearmix/data/state/supervisor.log` | supervisor messages |
 
-Data, kept on upgrade: `/DataVolume/tonearmix/data` (`settings.conf`, `server/` page settings and playlists, `cache/` index and covers, `logs/`, `state/`). Program: `/DataVolume/tonearmix/program`.
+Data, kept on upgrade: `/DataVolume/tonearmix/data` (same content). Program: `/DataVolume/tonearmix/program`.
 
 ### Memory
 
-The My Cloud has 256 MB of RAM, shared with the WD services. The start-up script gives the program a soft memory limit (`GOMEMLIMIT=96MiB`, `GOGC=50`): it frees memory sooner instead of growing. To change these values, write the two lines `GOMEMLIMIT=...` and `GOGC=...` in `/DataVolume/tonearmix/defaults` (a file owned by root), then restart. If the My Cloud becomes slow, turning off the built-in DLNA media server (**Settings > Media**) frees memory; the control app does not need it.
+The ARM models have little RAM (256 MB for the first generation, 512 MB to 1 GB for the others), shared with the WD services. The start-up script gives the program a soft memory limit: it frees memory sooner instead of growing. Default values: `GOMEMLIMIT=96MiB` and `GOGC=50` on the first generation, `GOMEMLIMIT=160MiB` and `GOGC=50` for the ARM application, no limit on the Intel models. To change them, write the two lines `GOMEMLIMIT=...` and `GOGC=...` in a file named `defaults`, owned by root, next to the data folder (`/DataVolume/tonearmix/defaults` or `/mnt/HD/HD_a2/Nas_Prog/_tonearmix/defaults`), then restart. If the My Cloud becomes slow, turning off the built-in DLNA media server (**Settings > Media**) frees memory; the control app does not need it.
 
 ## Network ports
 
@@ -155,16 +175,18 @@ The My Cloud has 256 MB of RAM, shared with the WD services. The start-up script
 | 49495/TCP | events for the control app |
 | 1900/UDP | SSDP discovery (shared with the built-in DLNA server) |
 
-The My Cloud receives no more security updates: keep it on the home network and leave remote access off.
+The first generation and My Cloud OS 3 receive no more security updates: keep the My Cloud on the home network and leave remote access off.
 
 ## Building from source
 
 You need Go 1.24 or later, Python 3 and a POSIX shell. It works on Linux and macOS.
 
 ```sh
-./build.sh                  # runs the tests, then builds the archive in dist/
+./build.sh                  # runs the tests, then builds every package in dist/
 SKIP_TESTS=1 ./build.sh     # build only
 ```
+
+`dist/` then holds the first-generation archive and one `.bin` application package per model and OS generation, each with its `.sha256`. The application packages are assembled by `package/mkapkg.py`, with the Python standard library only: no WD tool is needed.
 
 The version is read from `package/VERSION` only.
 
@@ -173,11 +195,13 @@ The version is read from `package/VERSION` only.
 | Path | Content |
 |---|---|
 | `server/` | the Go program (package `main`), identical in every edition |
-| `package/tonearmix.sh` | supervisor: restarts the program if it stops and applies the requests made from the page |
-| `package/tonearmix.init` | SysV start-up script (`@LIBDIR@` is filled in at install time): account, data folder, memory limit, start and stop |
-| `package/install.sh` | installer run over SSH |
-| `package/VERSION` | version of the archive and of the program |
+| `package/tonearmix.sh` | supervisor (every generation): restarts the program if it stops and applies the requests made from the page |
+| `package/tonearmix.init` | SysV start-up script of the first generation (`@LIBDIR@` is filled in at install time): account, data folder, memory limit, start and stop |
+| `package/install.sh` | installer of the first generation, run over SSH |
+| `package/apkg/` | application of My Cloud OS 3 and OS 5: `apkg.rc` (name, version, description), scripts run by the NAS (`preinst.sh`, `install.sh`, `init.sh`, `start.sh`, `stop.sh`, `clean.sh`, `remove.sh`) and the application page `web/index.html` |
+| `package/VERSION` | version of the packages and of the program |
 | `package/mkpkg.py` | assembly of the `.tar.gz` with the Python standard library |
+| `package/mkapkg.py` | assembly of the `.bin` application packages with the Python standard library (WD package layout, per-model header, `apkg.xml`, `apkg.sign`) |
 | `package/build-tools/badge_font.py` | regenerates `badges/font.png` and `font.json` from Inter Bold (needs Pillow) |
 | `package/build-tools/badge_logos.py` | redraws the original badge logos `badges/cd.png`, `hires.png` and `mp3.png` (needs Pillow) |
 | `package/build-tools/app_icons.py` | draws the Tonearmix application icon in every size (UPnP icons, App Center, Package Center; needs Pillow) |
